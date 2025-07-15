@@ -18,11 +18,17 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
+from flask import abort
 import requests
 from math import acos, sin, radians, cos
 from time import time
 from datetime import timedelta, datetime
 from urllib.parse import quote
+
+def assert404[T](val:T|None, msg:str|None) -> T:
+    if val is None:
+        abort(404, msg)
+    return val
 
 def midpoint(latlng1: tuple[float, float], latlng2: tuple[float, float])-> tuple[float, float]:
     lat = (latlng1[0]+latlng2[0])/2

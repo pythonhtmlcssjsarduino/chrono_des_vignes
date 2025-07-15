@@ -98,7 +98,7 @@
                         <div class="card-body">
                             {% for edition in event.editions %}
                                 {% if edition.edition_date > date %}
-                                    <a href="{{ url_for('view.view_edition_page', event=event.name, edition=edition.name) }}" class="text-decoration-none link-dark">
+                                    <a href="{{ url_for('view.view_edition_page', event_name=event.name, edition_name=edition.name) }}" class="text-decoration-none link-dark">
                                         <div class="card-group card d-flex align-items-center justify-content-center">
                                             {{edition.name}}
                                             <br>

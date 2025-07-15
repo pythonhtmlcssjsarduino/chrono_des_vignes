@@ -22,10 +22,11 @@ from datetime import datetime
 from flask import Blueprint, redirect, render_template, flash, request, session
 from chrono_des_vignes import admin_required, db, set_route, lang_url_for as url_for, socketio
 from flask_login import login_required, current_user
+from chrono_des_vignes.lib import assert404
 from chrono_des_vignes.models import  Event, Edition, Parcours, Passage, Inscription
 from flask_socketio import join_room, leave_room, emit
 from ..passages import get_passage_data
-from typing import Any
+from typing import Any, cast
 from werkzeug.wrappers.response import Response
 from icecream import ic
 
@@ -34,7 +35,7 @@ parcours = Blueprint('parcours', __name__, template_folder='templates')
 @socketio.on('connect', namespace='/edition/parcours')
 def parcours_connect(auth: dict[str, Any])-> bool:
     if current_user.is_authenticated and auth.get('event_id') and auth.get('edition_id'):
-        event:Event = Event.query.get(auth['event_id'])
+        event = Event.query().get(auth['event_id'])
         if not event or event.createur != current_user:
             return False # connection not allowed
         edition = event.editions.filter_by(id=auth['edition_id']).first()
@@ -42,25 +43,25 @@ def parcours_connect(auth: dict[str, Any])-> bool:
             return False # connection not allowed
         
         session['room'] = f'edition-parcours-{event.id}-{edition.id}'
-        join_room(session['room'], request.sid)#type: ignore
+        join_room(session['room'], request.sid)
     else:
         return False # connection not allowed
     return True
 
 @socketio.on('disconnect', namespace='/edition/parcours')
 def parcours_disconnect()-> None:
-    leave_room(session['room'], request.sid)#type: ignore
+    leave_room(session['room'], request.sid)
     del session['room']
 
 @socketio.on('get_parcours_passage', namespace='/edition/parcours')
-def get_parcours_passages(parcours_id: int)-> list[dict[str, Any]]:
-    parcours = Parcours.query.get(parcours_id)
-    edition = Edition.query.get(session['room'].split('-')[3])
-    inscriptions:list[Inscription] = Inscription.query.filter_by(edition=edition, parcours=parcours).all()
+def get_parcours_passages(parcours_id: int)-> list[dict[str, Any]]:  # pyright: ignore[reportExplicitAny]
+    parcours = Parcours.query().get(parcours_id)
+    edition = Edition.query().get(cast(str, session['room']).split('-')[3])
+    inscriptions = Inscription.query().filter_by(edition=edition, parcours=parcours).all()
     data = []
     for coureur in inscriptions:
         passage = coureur.get_last_passage()
-        first_passage:Passage = coureur.passages.order_by(Passage.time_stamp.asc()).first()
+        first_passage = coureur.passages.order_by(Passage.time_stamp.asc()).first()
         if coureur.has_started():
             pass_data = get_passage_data(passage, json=True)
             pass_data.update({'started':True, 'start_time':first_passage.time_stamp.timestamp(), 'id':coureur.id, 'finish':coureur.has_finish(), 'all_right':coureur.has_all_right(), 'end':coureur.end})
@@ -75,17 +76,17 @@ def get_parcours_passages(parcours_id: int)-> list[dict[str, Any]]:
 
 @socketio.on('launch_parcours', namespace='/edition/parcours')
 def launch_parcours(data: dict[str, Any])-> None:
-    parcours = Parcours.query.get(data.get('parcours_id'))
-    edition = Edition.query.get(session['room'].split('-')[3])
-    if parcours is not None and data.get('start_time'):
-        start_time =datetime.fromtimestamp(data['start_time']/1000)
+    parcours = Parcours.query().get(data.get('parcours_id'))
+    edition = Edition.query().get(cast(str, session['room']).split('-')[3])
+    if parcours and edition and data.get('start_time'):
+        start_time =datetime.fromtimestamp(cast(float,data['start_time'])/1000)
         #ic('start', start_time)
         inscription:Inscription
         for inscription in edition.inscriptions.filter(Inscription.parcours==parcours).all():
             #ic(inscription, inscription.has_started(), inscription.present, inscription.end)
             if not inscription.has_started() and inscription.present:
                 #ic('to start')
-                passage = Passage(time_stamp=start_time, inscription_id = inscription.id)
+                passage = Passage(time_stamp=start_time, inscription_id = inscription.id, key_id=None)
                 db.session.add(passage)
                 db.session.commit()
                 db.session.refresh(passage)
@@ -96,7 +97,7 @@ def launch_parcours(data: dict[str, Any])-> None:
                                     'stand':passage.get_stand().name},
                                     namespace='/dashboard', to=f'{edition.event.id}-{edition.id}')
                 
-                first_passage:Passage = inscription.passages.order_by(Passage.time_stamp.asc()).first()
+                first_passage = assert404(inscription.passages.order_by(Passage.time_stamp.asc()).first())
                 pass_data = get_passage_data(passage, json=True)
                 pass_data.update({'started':True,
                                     'parcours_id':inscription.parcours.id,
@@ -109,11 +110,11 @@ def launch_parcours(data: dict[str, Any])-> None:
     else:
         ic('error value false', parcours is not None and data.get('start_time'), parcours ,data.get('start_time'), data)  # noqa: F821
 @socketio.on('stop_parcours', namespace='/edition/parcours')
-def stop_parcours(data: dict[str, Any])-> None:
-    parcours = Parcours.query.get(data.get('parcours_id'))
-    edition = Edition.query.get(session['room'].split('-')[3])
+def stop_parcours(data: dict[str, Any])-> None:  # pyright: ignore[reportExplicitAny]
+    parcours = Parcours.query().get(data.get('parcours_id'))
+    edition = Edition.query().get(cast(str, session['room']).split('-')[3])
 
-    if parcours is not None:
+    if parcours and edition:
         inscription:Inscription
         for inscription in edition.inscriptions.filter(Inscription.parcours==parcours).all():
             if inscription.end is None:
@@ -133,9 +134,9 @@ def stop_parcours(data: dict[str, Any])-> None:
                 emit('stop', {'type':end, 'inscription_id':inscription.id}, namespace='/edition/parcours', to=f'edition-parcours-{inscription.event.id}-{inscription.edition.id}')
 
 @socketio.on('disqualify', namespace='/edition/parcours')
-def disqualify(data: dict[str, Any])->None:
+def disqualify(data: dict[str, Any])->None:  # pyright: ignore[reportExplicitAny]
     if data.get('inscription_id'):
-        inscription = Inscription.query.get(data.get('inscription_id'))
+        inscription = assert404(Inscription.query().get(data.get('inscription_id')))
         #ic('disqualify', inscription)
         if inscription.end is None:
             inscription.end = 'disqual'
@@ -145,7 +146,7 @@ def disqualify(data: dict[str, Any])->None:
 @socketio.on('abandon', namespace='/edition/parcours')
 def abandon(data: dict[str, Any])->None:
     if data.get('inscription_id'):
-        inscription = Inscription.query.get(data['inscription_id'])
+        inscription = assert404(Inscription.query().get(data['inscription_id']))
         #ic('abandon', inscription)
         if inscription.end is None:
             inscription.end = 'abandon'
@@ -156,7 +157,7 @@ def abandon(data: dict[str, Any])->None:
 def finish(data: dict[str, Any])->None:
     #ic('finish', data)
     if data.get('inscription_id'):
-        inscription:Inscription = Inscription.query.get(data['inscription_id'])
+        inscription = assert404(Inscription.query().get(data['inscription_id']))
         #ic('finish', inscription)
         if inscription.end is None:
             inscription.end = 'finish'
@@ -168,9 +169,10 @@ def finish(data: dict[str, Any])->None:
 @admin_required
 def view(event_name:str, edition_name:str)->str|Response:
     user = current_user
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    edition:Edition = event.editions.filter_by(name=edition_name).first_or_404()
-    parcours = edition.parcours
+    event = Event.query().filter_by(name=event_name).first_or_404()
+    edition = assert404(event.editions.filter_by(name=edition_name).first())
+    
+    parcours = edition.parcours.all()
 
     if 0 and edition.edition_date>datetime.now():
         flash('l\'edition n\'as pas encore commencé', 'warning')

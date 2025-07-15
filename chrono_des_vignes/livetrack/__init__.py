@@ -2,7 +2,7 @@
 # Chrono Des Vignes
 # a timing system for sports events
 # 
-# Copyright © 2025 Romain Maurer
+# Copyright © 2024-2025 Romain Maurer
 # This file is part of Chrono Des Vignes
 # 
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -71,7 +71,7 @@ def get_run_result(inscription:Inscription, json: bool=False)->list[dict[str, An
 
 @set_route(livetrack, '/livetrack/<inscription_id>')
 def livetrack_page(inscription_id: str)->str|Response:
-    inscription:Inscription = Inscription.query.get_or_404(inscription_id)
+    inscription:Inscription = Inscription.query().get_or_404(inscription_id)
 
     #ic(get_run_result(inscription))
 

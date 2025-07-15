@@ -22,6 +22,7 @@ from flask import Blueprint, flash, render_template, redirect
 from chrono_des_vignes import admin_required, db, set_route, lang_url_for as url_for
 from chrono_des_vignes.admin.editions.form import Edition_form
 from flask_login import login_required, current_user
+from chrono_des_vignes.lib import assert404
 from chrono_des_vignes.models import  Event, Parcours, Edition
 from datetime import datetime
 from .dossard import dossard
@@ -42,7 +43,7 @@ editions.register_blueprint(result)
 @admin_required
 def editions_page(event_name: str)->str|Response:
     # * page to access the differents editions of the event
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     user = current_user
     form = Edition_form()
     form.parcours.choices=[str((e.name, e.description)) for e in event.parcours.filter_by(archived=False).all()] # type: ignore
@@ -73,8 +74,8 @@ def editions_page(event_name: str)->str|Response:
 @login_required
 @admin_required
 def delete_edition_page(event_name: str, edition_name: str)-> str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    edition : Edition= event.editions.filter_by(name=edition_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
+    edition = assert404(event.editions.filter_by(name=edition_name).first())
     if edition.first_inscription <= datetime.now():
         flash('l\'edition ne peut pas être supprimée car les inscriptions sont déjà ouvertes', 'danger')
         return redirect(url_for('admin.editions.modify_edition_page',event_name=event.name, edition_name=edition.name))
@@ -91,8 +92,8 @@ def delete_edition_page(event_name: str, edition_name: str)-> str|Response:
 @login_required
 @admin_required
 def modify_edition_page(event_name: str, edition_name: str)-> str|Response:
-    event : Event = Event.query.filter_by(name=event_name).first_or_404()
-    edition : Edition= event.editions.filter_by(name=edition_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
+    edition= assert404(event.editions.filter_by(name=edition_name).first())
     user = current_user
     form = Edition_form(data={'name':edition.name,
                               'edition_date':edition.edition_date,

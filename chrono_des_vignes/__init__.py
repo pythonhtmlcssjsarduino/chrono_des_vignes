@@ -25,7 +25,7 @@ import os
 from datetime import datetime
 from functools import wraps
 from logging.handlers import SMTPHandler
-from typing import Any, Callable, ParamSpec, TypeVar, cast, Final, override
+from typing import Any, Callable, Generic, ParamSpec, Self, TypeVar, cast, Final, override
 from urllib.parse import quote
 from flask.typing import ResponseReturnValue
 from flask_babel import Babel, _, gettext
@@ -34,7 +34,7 @@ from flask_login import LoginManager, current_user
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
-from icecream import install
+from icecream import ic, install
 from werkzeug import exceptions
 from werkzeug.wrappers.response import Response
 from flask import (
@@ -49,7 +49,7 @@ from flask import (
     session,
     url_for,
 )
-from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass
+from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass, Query
 from dotenv import load_dotenv
 install()
 load_dotenv()
@@ -81,10 +81,31 @@ if app.debug:
     LANGAGES += ("ids", "pseudo")  # pyright: ignore[reportConstantRedefinition, reportGeneralTypeIssues]
 PICTURE_SIZE:Final[tuple[int, int]] = (200, 200)
 
-class Base(DeclarativeBase, MappedAsDataclass):  # pyright: ignore[reportUnsafeMultipleInheritance]
-  pass
+T = TypeVar("T")
 
-db = SQLAlchemy(app, model_class=Base)
+class BaseQuery(Query[T], Generic[T]):
+    def first_or_404(self, description: str | None = None) -> T:
+        result = self.first()
+        if result is None:
+            abort(404, description)
+        return result
+    
+    def get_or_404(self, ident:Any|tuple[Any, ...], description: str | None = None) -> T:  # pyright: ignore[reportExplicitAny]
+        result = self.get(ident)
+        if result is None:
+            abort(404, description)
+        return result
+    
+    @override
+    def get(self, ident: Any|tuple[Any, ...]) -> T|None:  # pyright: ignore[reportExplicitAny]
+        return super().get(ident)
+
+class Base(DeclarativeBase, MappedAsDataclass):  # pyright: ignore[reportUnsafeMultipleInheritance]
+    @classmethod
+    def query(cls) :
+        return cast(BaseQuery[Self], db.session.query(cls))
+
+db = SQLAlchemy(app, model_class=Base, session_options={"query_cls": BaseQuery})
 
 migrate = Migrate(app, db)
 

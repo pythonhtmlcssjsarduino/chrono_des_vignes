@@ -19,14 +19,15 @@
 '''
 from __future__ import annotations
 from html import escape
-from sqlalchemy.orm import DynamicMapped, Mapper, mapped_column, Mapped
-from chrono_des_vignes import db, DEFAULT_PROFIL_PIC
+from flask import abort
+from sqlalchemy.orm import AppenderQuery, DynamicMapped, Mapper, mapped_column, Mapped
+from chrono_des_vignes import db, DEFAULT_PROFIL_PIC, Base
 from sqlalchemy_utils import ColorType as ColorType_sql_utils  # pyright: ignore[reportMissingTypeStubs]
 from colour import Color
 from flask_login import UserMixin
 from datetime import datetime, timedelta
 from chrono_des_vignes.lib import calc_points_dist
-from typing import NamedTuple, TypeVar, cast
+from typing import NamedTuple, cast
 from collections.abc import Iterable, Iterator
 from markdown import markdown
 from sqlalchemy import not_, Table, Integer, ForeignKey, DateTime, String, Boolean, Text, Float, Column
@@ -34,7 +35,14 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.inspection import inspect
 from ast import literal_eval
 
-Model = db.Model
+Model = Base
+
+class BaseAppenderQuery[T](AppenderQuery[T]):
+    def first_or_404(self, description: str | None = None) -> T:
+        result = self.first()
+        if result is None:
+            abort(404, description)
+        return result
 
 md_extentions:list[str] = ['admonition', 'markdown.extensions.tables']
 def get_html_from_markdown(markdown_text: str) -> str:
@@ -45,9 +53,8 @@ def get_html_from_markdown(markdown_text: str) -> str:
         output_format='html'
     )
 
-T = TypeVar("T", bound=Model)
-def get_column_max_length(table:type[T], column_name:str) -> int:
-    mapper : Mapper[T] = cast(Mapper[T], inspect(table, True))
+def get_column_max_length[T](table:type[T], column_name:str) :
+    mapper = cast(Mapper[T], inspect(table, True))
     column = mapper.columns[column_name]
 
     if isinstance(column.type, String) and column.type.length is not None:
@@ -76,7 +83,7 @@ passagekey_stand:Table = db.Table(
 )
 
 class User(UserMixin, Model):
-    id: Mapped[int] = mapped_column( primary_key=True, repr=True)
+    id: Mapped[int] = mapped_column( primary_key=True, repr=True, init=False)
 
     name: Mapped[str]= mapped_column(String(40), nullable=False, repr=False)
     lastname: Mapped[str] = mapped_column(String(40), nullable=False, repr=False)
@@ -90,12 +97,12 @@ class User(UserMixin, Model):
     creation_date: Mapped[datetime] = mapped_column(nullable=False, default=datetime.now, repr=False)
     avatar: Mapped[str] = mapped_column(String(80), nullable=False, default=DEFAULT_PROFIL_PIC, repr=False)
     
-    creations:DynamicMapped[Event]=relationship('Event', back_populates='createur', lazy='dynamic', init=False, repr=False)
-    inscriptions:DynamicMapped[Inscription] = relationship('Inscription', back_populates='inscrit', lazy='dynamic', init=False, repr=False)
+    creations:DynamicMapped[Event]=relationship('Event', back_populates='createur', lazy='dynamic', query_class=BaseAppenderQuery, init=False, repr=False)
+    inscriptions:DynamicMapped[Inscription] = relationship('Inscription', back_populates='inscrit', lazy='dynamic', query_class=BaseAppenderQuery, init=False, repr=False)
     __tablename__:str = 'user'
 
 class Event(Model):
-    id: Mapped[int] = mapped_column(primary_key=True, repr=True)
+    id: Mapped[int] = mapped_column(primary_key=True, repr=True, init=False)
     name: Mapped[str] = mapped_column(String(40), nullable=False, unique=True, repr=True)
 
     createur_id: Mapped[int] = mapped_column(ForeignKey('user.id'), nullable=False, repr=False)
@@ -105,7 +112,7 @@ class Event(Model):
     description: Mapped[str] = mapped_column(Text, nullable=False, default='', repr=False)
 
     parcours: DynamicMapped[Parcours] = relationship('Parcours', back_populates='event', lazy='dynamic', repr=False, init=False)
-    editions: DynamicMapped[Edition] = relationship('Edition', backref='event', lazy='dynamic', repr=False, init=False)
+    editions: DynamicMapped[Edition] = relationship('Edition', back_populates='event', lazy='dynamic', repr=False, init=False)
     inscrits: DynamicMapped[Inscription] = relationship('Inscription', back_populates='event', lazy='dynamic', repr=False, init=False)
     passage_keys: DynamicMapped[PassageKey] = relationship('PassageKey', back_populates='event', lazy='dynamic', repr=False, init=False)
     __tablename__:str = 'event'
@@ -124,7 +131,7 @@ class Event(Model):
         return uniques
 
 class Parcours(Model):
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
     stands: DynamicMapped[Stand] = relationship('Stand', back_populates='parcours', foreign_keys='Stand.parcours_id', lazy ='dynamic', init=False)
     traces: DynamicMapped[Trace] = relationship('Trace', back_populates='parcours', foreign_keys='Trace.parcours_id', lazy ='dynamic', init=False)
     start_stand: Mapped[Stand] = relationship('Stand', foreign_keys='Stand.start_stand', uselist=False, init=False)
@@ -142,7 +149,7 @@ class Parcours(Model):
     __tablename__:str = 'parcours'
     
     # region
-    def __len__(self)-> int:
+    def __len__(self):
         return len(tuple(self))
 
     def __iter__(self) ->Iterator[Stand|Trace]:
@@ -181,7 +188,7 @@ class Parcours(Model):
 
     def iter_chrono_list(self)->Iterator[Stand]:
         for id in cast(list[int],literal_eval(self.chronos_list)):
-            yield Stand.query.get(id)  # pyright: ignore[reportReturnType]
+            yield Stand.query().get(id)  # pyright: ignore[reportReturnType]
 
     def get_chrono_dists(self):
         dist:float=0
@@ -200,17 +207,17 @@ class Parcours(Model):
     # endregion
 
 class Stand(Model):
-    id:Mapped[int] = mapped_column(Integer, primary_key=True)
+    id:Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
     name:Mapped[str]= mapped_column(String(40), nullable=False)
     lat:Mapped[float] = mapped_column( Float, nullable=False)
     lng:Mapped[float] = mapped_column( Float, nullable=False)
-    elevation:Mapped[float] = mapped_column( Float)
+    elevation:Mapped[float|None] = mapped_column( Float, nullable=True)
     parcours_id:Mapped[int] = mapped_column(Integer, ForeignKey('parcours.id'))
     parcours:Mapped[Parcours] = relationship('Parcours', back_populates='stands',foreign_keys=[parcours_id], lazy='select', init=False)
     # id du parcours dont il est le debut (le meme que parcours_id) ne rien mettre si pas le premier
-    start_stand:Mapped[int] = mapped_column(Integer, ForeignKey('parcours.id'))
+    start_stand:Mapped[int|None] = mapped_column(Integer, ForeignKey('parcours.id'), nullable=True)
     # id du parcours dont il est la fin (le meme que parcours_id) ne rien mettre si pas le dernier
-    end_stand:Mapped[int] = mapped_column(Integer, ForeignKey('parcours.id'))
+    end_stand:Mapped[int|None] = mapped_column(Integer, ForeignKey('parcours.id'), nullable=True)
     color:Mapped[Color] = mapped_column(ColorType , nullable =False, default=lambda:Color('red'))
     chrono:Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     #traces qui partent de ce stand
@@ -221,7 +228,7 @@ class Stand(Model):
     __tablename__:str = 'stand'
 
 class Trace(Model):
-    id:Mapped[int] = mapped_column(Integer, primary_key=True)
+    id:Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
     name:Mapped[str]= mapped_column(String(40), nullable=False)
     parcours_id:Mapped[int] = mapped_column(Integer, ForeignKey('parcours.id'))
     parcours:Mapped[Parcours] = relationship('Parcours', back_populates='traces', lazy='select', init=False)
@@ -285,9 +292,10 @@ class Trace(Model):
     # endregion
 
 class Edition(Model):
-    id:Mapped[int] = mapped_column(Integer, primary_key=True)
+    id:Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
     name:Mapped[str]= mapped_column(String(40), nullable=False)
     event_id:Mapped[int]=mapped_column(Integer, ForeignKey('event.id'), nullable=False)
+    event:Mapped[Event] = relationship('Event', back_populates='editions', lazy='select', init=False)
     parcours:DynamicMapped[Parcours] = relationship('Parcours', secondary=editions_parcours, back_populates='editions', lazy ='dynamic', init=False)
     inscriptions:DynamicMapped[Inscription]=relationship('Inscription', back_populates='edition', lazy='dynamic', init=False)
     edition_date:Mapped[datetime] = mapped_column( DateTime, nullable=False)
@@ -305,7 +313,7 @@ class Edition(Model):
         return get_html_from_markdown(self.description)
 
 class Inscription(Model):
-    id:Mapped[int] = mapped_column(Integer, primary_key=True)
+    id:Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
     user_id:Mapped[int] = mapped_column(Integer, ForeignKey('user.id'), nullable=False)
     inscrit:Mapped[User] = relationship('User', back_populates='inscriptions', init=False)
     event_id:Mapped[int]=mapped_column(Integer, ForeignKey('event.id'), nullable=False)
@@ -314,9 +322,9 @@ class Inscription(Model):
     edition:Mapped[Edition] = relationship('Edition', back_populates='inscriptions', init=False)
     parcours_id:Mapped[int]=mapped_column(Integer, ForeignKey('parcours.id'), nullable=False)
     parcours:Mapped[Parcours] = relationship('Parcours', back_populates='inscriptions', init=False)
-    dossard:Mapped[int]=mapped_column(Integer)
+    dossard:Mapped[int|None]=mapped_column(Integer, nullable=True, init=False)
     passages:DynamicMapped[Passage]=relationship('Passage', back_populates='inscription', lazy='dynamic', init=False)
-    end:Mapped[str]=mapped_column(String(10)) # abandon, disqual, absent, finish or None
+    end:Mapped[str|None]=mapped_column(String(10), nullable=True, init=False) # abandon, disqual, absent, finish or None
     creation_date:Mapped[datetime]=mapped_column(DateTime, nullable=False, default=datetime.now)
     present:Mapped[bool]=mapped_column(Boolean, nullable=False, default=False)
     __tablename__:str = 'inscription'
@@ -393,7 +401,7 @@ class Inscription(Model):
         if self.end != 'finish':
             return {'abandon':'abandon', 'disqual':'disqualifié', 'absent':'absent'}.get(str(self.end), None)
         # all inscriptions that are in the same parcours and edition
-        inscriptions = Inscription.query.filter(Inscription.parcours==self.parcours, Inscription.edition==self.edition)
+        inscriptions = Inscription.query().filter(Inscription.parcours==self.parcours, Inscription.edition==self.edition)
         # get all the inscription that there last time is smaller than this one
         inscriptions = inscriptions.filter(not_(Inscription.passages.any(Passage.time_stamp>self.get_time())))#type:ignore[no-untyped-call]
         # get only those that have finished
@@ -403,7 +411,7 @@ class Inscription(Model):
     # endregion
 
 class PassageKey(Model):
-    id:Mapped[int] = mapped_column(Integer, primary_key=True)
+    id:Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
     event_id:Mapped[int]=mapped_column(Integer, ForeignKey('event.id'), nullable=False)
     event:Mapped[Event]=relationship('Event', back_populates='passage_keys', init=False)
     edition_id:Mapped[int]=mapped_column(Integer, ForeignKey('edition.id'), nullable=False)
@@ -416,7 +424,7 @@ class PassageKey(Model):
     __tablename__:str = 'passage_key'
 
 class Passage(Model):
-    id:Mapped[int] = mapped_column(Integer, primary_key=True)
+    id:Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
     time_stamp:Mapped[datetime]=mapped_column(DateTime, nullable=False)
     key_id:Mapped[int|None]=mapped_column(Integer, ForeignKey('passage_key.id'), nullable=True) # pas de key implique demmaré par l'admin
     key:Mapped[PassageKey|None]=relationship('PassageKey', back_populates='passages', lazy='select', init=False)
@@ -432,3 +440,4 @@ class Passage(Model):
             if stand is None:
                 stand = self.inscription.parcours.start_stand
         return stand
+

@@ -26,7 +26,7 @@ from chrono_des_vignes.models import Event, Stand, Trace, Parcours
 from folium import Map, Marker, Icon, PolyLine, Popup, LayerControl, TileLayer
 from folium.template import Template
 from colour import Color
-from chrono_des_vignes.lib import get_points_elevation, calc_points_dist, midpoint
+from chrono_des_vignes.lib import assert404, get_points_elevation, calc_points_dist, midpoint
 from sqlalchemy import or_
 from werkzeug.wrappers.response import Response
 from flask_wtf import FlaskForm
@@ -38,8 +38,8 @@ parcours_bp = Blueprint('parcours', __name__, template_folder='templates')
 @login_required
 @admin_required
 def delete_parcours_page(event_name: str, parcours_name: str)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
     if parcours.editions.count()>0:
         flash('action impossible le parcours est déjà utilisé dans une edition.', 'danger')
         return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
@@ -55,23 +55,30 @@ def delete_parcours_page(event_name: str, parcours_name: str)->str|Response:
 @login_required
 @admin_required
 def copy_parcours(event_name:str, parcours_name:str)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
 
-    p = Parcours(name=f'{parcours.name} copy', event=event, description=parcours.description, chronos_list=parcours.chronos_list)
+    p = Parcours(name=f'{parcours.name} copy', event_id=event.id, description=parcours.description, chronos_list=parcours.chronos_list)
     db.session.add(p)
     db.session.commit()
     db.session.refresh(p)
-    old_stands = Stand.query.filter_by(parcours_id=parcours.id).all()
+    old_stands = Stand.query().filter_by(parcours_id=parcours.id).all()
     old_to_new_id = {}
     for old_stand in old_stands:
-        new_stand = Stand(name=old_stand.name, lat=old_stand.lat, lng=old_stand.lng, elevation=old_stand.elevation, parcours_id=p.id, start_stand=p.id if old_stand.start_stand else None, end_stand=p.id if old_stand.end_stand else None, color=old_stand.color, chrono=old_stand.chrono)
+        new_stand = Stand(name=old_stand.name,
+                                lat=old_stand.lat,
+                                lng=old_stand.lng,
+                                elevation=old_stand.elevation,
+                                parcours_id=p.id,
+                                start_stand=p.id if old_stand.start_stand else None,
+                                end_stand=p.id if old_stand.end_stand else None,
+                                color=old_stand.color, chrono=old_stand.chrono)
         db.session.add(new_stand)
         db.session.commit()
         db.session.refresh(new_stand)
         old_to_new_id[old_stand.id] = new_stand.id
     
-    old_traces:list[Trace] = Trace.query.filter_by(parcours_id=parcours.id).all()
+    old_traces:list[Trace] = Trace.query().filter_by(parcours_id=parcours.id).all()
     for old_trace in old_traces:
         new_trace = Trace(name=old_trace.name, parcours_id=p.id, start_id=old_to_new_id[old_trace.start_id], end_id=old_to_new_id[old_trace.end_id], trace=old_trace.trace, turn_nb=old_trace.turn_nb)
         db.session.add(new_trace)
@@ -83,8 +90,8 @@ def copy_parcours(event_name:str, parcours_name:str)->str|Response:
 @login_required
 @admin_required
 def archive_parcours_page(event_name:str, parcours_name:str)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
     parcours.archived =True
     db.session.commit()
     return redirect(url_for('admin.parcours.parcours_page', event_name=event.name))
@@ -93,8 +100,8 @@ def archive_parcours_page(event_name:str, parcours_name:str)->str|Response:
 @login_required
 @admin_required
 def unarchive_parcours_page(event_name:str, parcours_name:str)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
     parcours.archived =False
     db.session.commit()
     return redirect(url_for('admin.parcours.parcours_page', event_name=event.name))
@@ -104,7 +111,7 @@ def unarchive_parcours_page(event_name:str, parcours_name:str)->str|Response:
 @admin_required
 def parcours_page(event_name:str)->str|Response:
     # * page to access the differents parcours of the event
-    event = Event.query.filter_by(name=event_name).first()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     user = current_user
 
     form = New_parcours_form()
@@ -112,11 +119,18 @@ def parcours_page(event_name:str)->str|Response:
         if not event.parcours.filter_by(name=form.name.data).first():
             #ok nom pas utilisé
 
-            p = Parcours(name=form.name.data, event=event)
+            p = Parcours(name=form.name.data, event_id=event.id)
             db.session.add(p)
             db.session.commit()
             db.session.refresh(p)
-            s= Stand(name=f'debut-{form.name.data}'[:36], parcours_id=p.id, lat=form.start_lat.data, lng=form.start_lng.data, chrono=1, start_stand=p.id, end_stand=p.id)
+            s= Stand(name=f'debut-{form.name.data}'[:36],
+                            parcours_id=p.id,
+                            lat=form.start_lat.data,
+                            lng=form.start_lng.data,
+                            chrono=True,
+                            start_stand=p.id,
+                            end_stand=p.id,
+                            elevation=None)
             db.session.add(s)
             db.session.commit()
 
@@ -131,7 +145,7 @@ def parcours_page(event_name:str)->str|Response:
 def build_alt_graph(graph_data:list[Stand|Trace])->Any|None:
     return None
     
-    points = []
+    points = []  # pyright: ignore[reportUnreachable]
     to_request=[]
     last_point=None
     dist = 0
@@ -288,7 +302,7 @@ def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[fl
 
     # afficher le trace pour les modifications
     if current_trace_id is not None and modif:
-        trace = Trace.query.filter_by(id=current_trace_id).first()
+        trace = Trace.query().filter_by(id=current_trace_id).first()
         if trace is None or trace.parcours != parcours:
             abort(400)
         points :list[tuple[float, float]]= [(trace.start.lat, trace.start.lng ),*[(lat, lng) for lat, lng, _ in eval(trace.trace)],(trace.end.lat, trace.end.lng)]
@@ -364,7 +378,7 @@ def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[fl
 @login_required
 @admin_required
 def modify_parcours(event_name:str, parcours_name:str)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
 
     return render_modify_parcours(event, parcours)
@@ -373,7 +387,7 @@ def modify_parcours(event_name:str, parcours_name:str)->str|Response:
 @login_required
 @admin_required
 def modify_stand(event_name:str, parcours_name:str, stand_id: int)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
     stand = parcours.stands.filter_by(id=stand_id).first()
     
@@ -418,7 +432,7 @@ def modify_stand(event_name:str, parcours_name:str, stand_id: int)->str|Response
 @login_required
 @admin_required
 def modify_trace(event_name:str, parcours_name:str, trace_id: int)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
     trace = parcours.traces.filter_by(id=trace_id).first()
 
@@ -457,7 +471,7 @@ def modify_trace(event_name:str, parcours_name:str, trace_id: int)->str|Response
 @login_required
 @admin_required
 def new_stand(event_name:str, parcours_name:str, last_marker: int)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
 
     # trouve le marker qui est le debut de la traces
@@ -490,8 +504,8 @@ def new_stand(event_name:str, parcours_name:str, last_marker: int)->str|Response
         db.session.commit()
         db.session.refresh(new_stand)
 
-        nb_name = Trace.query.filter(Trace.name.contains(f'{stand.name} - {new_stand.name}'[:36])).count()
-        old_trace = Trace.query.filter_by(start_id = stand.id, turn_nb=turn_nb).first()
+        nb_name = Trace.query().filter(Trace.name.contains(f'{stand.name} - {new_stand.name}'[:36])).count()
+        old_trace = Trace.query().filter_by(start_id = stand.id, turn_nb=turn_nb).first()
         name = f"{stand.name} - {new_stand.name}{f' ({nb_name})' if nb_name else ''}"
         new_trace = Trace(name=name,
                         parcours_id=parcours.id,
@@ -518,7 +532,7 @@ def new_stand(event_name:str, parcours_name:str, last_marker: int)->str|Response
 @login_required
 @admin_required
 def new_step(event_name: str, parcours_name: str, last_marker: int, stand_id: int)-> str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
     end_stand = parcours.stands.filter_by(id=stand_id).first_or_404()
 
@@ -532,8 +546,8 @@ def new_step(event_name: str, parcours_name: str, last_marker: int, stand_id: in
             turn_nb += 1
    #ic(start_stand, turn_nb)
 
-    nb_name = Trace.query.filter(Trace.name.contains(f'{start_stand.name} - {end_stand.name}'[:36])).count()
-    old_trace = Trace.query.filter_by(start_id = start_stand.id, turn_nb=turn_nb).first()
+    nb_name = Trace.query().filter(Trace.name.contains(f'{start_stand.name} - {end_stand.name}'[:36])).count()
+    old_trace = Trace.query().filter_by(start_id = start_stand.id, turn_nb=turn_nb).first()
     
     name = f"{start_stand.name} - {end_stand.name}{f' ({nb_name})' if nb_name else ''}"
     new_trace = Trace(name=name,
@@ -567,7 +581,7 @@ def new_step(event_name: str, parcours_name: str, last_marker: int, stand_id: in
 @login_required
 @admin_required
 def delete_trace(event_name:str, parcours_name:str, trace_id: int)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
     trace = parcours.traces.filter_by(id=trace_id).first()
    #ic(trace, trace.end, parcours.start_stand, trace.end == parcours.start_stand, bool(trace))

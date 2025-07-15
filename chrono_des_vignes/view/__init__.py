@@ -25,7 +25,7 @@ from chrono_des_vignes.admin.parcours import create_map_and_alt_graph
 from flask_login import current_user, login_required
 from datetime import datetime
 from flask_babel import _
-from chrono_des_vignes.lib import deg_to_dms, create_gcalendar_link
+from chrono_des_vignes.lib import assert404, deg_to_dms, create_gcalendar_link
 from werkzeug.wrappers import Response
 
 view = Blueprint('view', __name__, template_folder='templates')
@@ -34,7 +34,7 @@ view = Blueprint('view', __name__, template_folder='templates')
 @login_required
 def delete_inscription(inscription_id: str)->str|Response:
     user = current_user
-    inscription:Inscription = user.inscriptions.filter_by(id=inscription_id).first_or_404(_('view.error.notyourinscription'))
+    inscription:Inscription = assert404(user.inscriptions.filter_by(id=inscription_id).first(), _('view.error.notyourinscription'))
     if inscription.edition.edition_date < datetime.now() or inscription.passages.count() > 0:
         return redirect(url_for('view.view_inscription_page', inscription_id= inscription.id))
     db.session.delete(inscription)
@@ -46,7 +46,7 @@ def delete_inscription(inscription_id: str)->str|Response:
 @login_required
 def view_inscription_page(inscription_id:str)->str|Response:
     user = current_user
-    inscription = user.inscriptions.filter_by(id=inscription_id).first_or_404(_('view.error.notyourinscription'))
+    inscription = assert404(user.inscriptions.filter_by(id=inscription_id).first(), _('view.error.notyourinscription'))
     edition = inscription.edition
     parcours = inscription.parcours
     if inscription.inscrit != user:
@@ -72,14 +72,14 @@ def view_inscription_page(inscription_id:str)->str|Response:
 @set_route(view, '/view/<event>')
 def view_event_page(event:str)->str|Response:
     user_data = current_user if current_user.is_authenticated else None
-    event = Event.query.filter_by(name=event).first_or_404(_('view.error.eventdontexist:event').format(event=event))
-    return render_template('view_event.html', user_data = user_data, event_data=event, time = datetime.now())
+    event_ = assert404(Event.query().filter_by(name=event).first(), _('view.error.eventdontexist:event').format(event=event))
+    return render_template('view_event.html', user_data = user_data, event_data=event_, time = datetime.now())
 
 @set_route(view, '/view/<event_name>/edition/<edition_name>')
 def view_edition_page(event_name: str, edition_name: str)->str|Response:
     user = current_user if current_user.is_authenticated else None
-    event = Event.query.filter_by(name=event_name).first_or_404(_('view.error.eventdontexist:event').format(event=event_name))
-    edition:Edition = event.editions.filter_by(name=edition_name).first_or_404(_('view.error.editiondontexist:edition').format(edition=edition_name))
+    event = Event.query().filter_by(name=event_name).first_or_404(_('view.error.eventdontexist:event').format(event=event_name))
+    edition = assert404(event.editions.filter_by(name=edition_name).first(), _('view.error.editiondontexist:edition').format(edition=edition_name))
 
     rdv_url= "https://www.google.com/maps/place/{0}%C2%B0{1}'{2}".format(*deg_to_dms(edition.rdv_lat))+"%22N+{0}%C2%B0{1}'{2}".format(*deg_to_dms(edition.rdv_lng))+f"%22E/@{edition.rdv_lat},{edition.rdv_lng},15z"
     gcalendar_url = create_gcalendar_link(f'{event.name} {_("view.edition")} {edition.name}', edition.edition_date, edition.edition_date)
@@ -88,8 +88,8 @@ def view_edition_page(event_name: str, edition_name: str)->str|Response:
 @set_route(view, '/view/<event_name>/parcours/<parcours_name>')
 def view_parcours_page(event_name: str, parcours_name: str)->str|Response:
     user_data = current_user if current_user.is_authenticated else None
-    event = Event.query.filter_by(name=event_name).first_or_404(_('view.error.eventdontexist:event').format(event=event_name))
-    parcours = event.parcours.filter_by(name=parcours_name).first_or_404(_('view.error.parcoursdontexist:parcours').format(parcours=parcours_name))
+    event = Event.query().filter_by(name=event_name).first_or_404(_('view.error.eventdontexist:event').format(event=event_name))
+    parcours = assert404(event.parcours.filter_by(name=parcours_name).first(), _('view.error.parcoursdontexist:parcours').format(parcours=parcours_name))
     
     element_name, last_path_name, next_path_name, markers_name, program_list, map, graph = create_map_and_alt_graph(parcours)
 

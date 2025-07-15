@@ -18,7 +18,7 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
-from flask import Blueprint, flash, render_template, redirect, url_for, send_file
+from flask import Blueprint, flash, render_template, redirect, url_for, send_file, abort
 from chrono_des_vignes import admin_required, db, set_route, socketio
 from flask_login import login_required, current_user
 from chrono_des_vignes.models import  Event, Parcours, Edition, Inscription, User
@@ -39,16 +39,18 @@ dossard = Blueprint('dossard', __name__, template_folder='templates')
 @login_required
 @admin_required
 def edition_dossards(event_name: str, edition_name: str)-> str|Response:
-    event : Event = Event.query.filter_by(name=event_name).first_or_404()
-    edition : Edition= event.editions.filter_by(name=edition_name).first_or_404()
+    event : Event = Event.query().filter_by(name=event_name).first_or_404()
+    edition= event.editions.filter_by(name=edition_name).first()
+    if not edition:
+        abort(404)
     user = current_user
 
     form = NewCoureurForm()
-    choices = edition.parcours
-    form.parcours.choices = [str((p.name, p.description)) for p in choices]#type: ignore[misc]
+    choices = edition.parcours.all()
+    form.parcours.choices = [str((p.name, p.description)) for p in choices]
 
     if form.validate_on_submit():
-        users = User.query.filter(and_(or_(func.lower(User.username)==func.lower(form.username.data),
+        users = User.query().filter(and_(or_(func.lower(User.username)==func.lower(form.username.data),
                                 and_(func.lower(User.name)==func.lower(form.name.data), func.lower(User.lastname)==func.lower(form.lastname.data))),
                             User.datenaiss==form.datenaiss.data)).all()
         if len(users) > 0:
@@ -69,7 +71,7 @@ def edition_dossards(event_name: str, edition_name: str)-> str|Response:
                     username = form.username.data
                 else:
                     username = f'{form.name.data}.{form.lastname.data}'
-                    nb = User.query.filter(User.username.contains(username)).count()
+                    nb = User.query().filter(User.username.contains(username)).count()
                     username += str(nb) if nb>0 else ''
                 hash_pwd= 'dev' # ! ''.join(secrets.choice(alphabet) for _ in range(10))
 
@@ -106,13 +108,13 @@ def validate_new_user(event_name: str, edition_name: str)-> str|Response:
     '''
     validate a new user that is already registered in the database
     '''
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     edition : Edition= event.editions.filter_by(name=edition_name).first_or_404()
     form = ValidateNewCoureurForm()
     form.parcours.choices = [str((p.name, p.description)) for p in edition.parcours]#type: ignore[misc]
     #ic(form.parcours.data)
     if form.validate_on_submit():
-        user = User.query.get_or_404(form.user_id.data)
+        user = User.query().get_or_404(form.user_id.data)
 
         choices = event.parcours.filter(Parcours.name.in_([eval(data)[0] for data in form.parcours.data]),#type: ignore[union-attr]
                                         not_(Parcours.inscriptions.any(Inscription.user_id==user.id))).all()#type: ignore
@@ -130,12 +132,12 @@ def validate_new_user(event_name: str, edition_name: str)-> str|Response:
 
         return redirect(url_for('admin.editions.dossard.edition_dossards', event_name=event_name, edition_name=edition_name))
     else:
-        return {'ok':False}#type: ignore
+        return {'ok':False}
 
 @socketio.on('connect', namespace='/dossard')
-def dossard_connect(auth: dict[str, Any])-> bool:
+def dossard_connect(auth: dict[str, Any])-> bool:  # pyright: ignore[reportExplicitAny]
     if current_user.is_authenticated and auth.get('event_id') and auth.get('edition_id'):
-        event:Event = Event.query.get(auth['event_id'])
+        event = Event.query().get(auth['event_id'])
         if not event or event.createur != current_user:
             return False # connection not allowed
         edition = event.editions.filter_by(id=auth['edition_id']).first()
@@ -151,10 +153,10 @@ def dossard_disconnect()->None:
 
 @socketio.on('change_dossard', namespace='/dossard')
 def change_dossard(data:dict[str, Any])->Any:
-    inscription = Inscription.query.get(data['inscription_id'])
+    inscription = Inscription.query().get(data['inscription_id'])
     if (not inscription and isinstance(data['new_dossard'], int) and not current_user.is_authenticated and inscription.event.createur == current_user):
         return False
-    if Inscription.query.filter(Inscription.dossard == data['new_dossard'], Inscription.edition==inscription.edition, Inscription.id!=inscription.id).first():
+    if Inscription.query().filter(Inscription.dossard == data['new_dossard'], Inscription.edition==inscription.edition, Inscription.id!=inscription.id).first():
         return {'erreur':'dossard déjà utilisé'}
     inscription.dossard = data['new_dossard']
     db.session.commit()
@@ -165,7 +167,7 @@ def set_presence(data: dict[str, Any])->bool:
     if not data.get('presence') is not None or not data.get('inscription_id'):
         return False
     
-    inscription:Inscription = Inscription.query.get(data['inscription_id'])
+    inscription = Inscription.query().get(data['inscription_id'])
     if not inscription:
         return False
     if inscription.edition.edition_date>datetime.now():
@@ -179,7 +181,7 @@ def set_presence(data: dict[str, Any])->bool:
 @login_required
 @admin_required
 def generate_all_dossard(event_name: str, edition_name: str)->str|Response:
-    event : Event = Event.query.filter_by(name=event_name).first_or_404()
+    event : Event = Event.query().filter_by(name=event_name).first_or_404()
     edition : Edition= event.editions.filter_by(name=edition_name).first_or_404()
 
     dossard_nb = [inscription.dossard for inscription in edition.inscriptions.filter(Inscription.dossard!=None).all()]  # noqa: E711
@@ -199,7 +201,7 @@ def generate_all_dossard(event_name: str, edition_name: str)->str|Response:
 @login_required
 @admin_required
 def export_dossard(event_name: str, edition_name: str)->Response:
-    event : Event = Event.query.filter_by(name=event_name).first_or_404()
+    event : Event = Event.query().filter_by(name=event_name).first_or_404()
     edition : Edition= event.editions.filter_by(name=edition_name).first_or_404()
 
     buffer = BytesIO()

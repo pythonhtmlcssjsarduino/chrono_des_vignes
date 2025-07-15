@@ -37,7 +37,7 @@ from werkzeug.wrappers import Response
 result = Blueprint('result', __name__, template_folder='templates')
 
 def get_result_data(edition: Edition, parcours:Parcours)->list[dict[str, Any]]:
-    coureurs:list[Inscription] = Inscription.query.filter(Inscription.edition==edition, Inscription.parcours==parcours).all()
+    coureurs:list[Inscription] = Inscription.query().filter(Inscription.edition==edition, Inscription.parcours==parcours).all()
     fini = []
     non_fini = []
     for coureur in coureurs:
@@ -128,7 +128,7 @@ def get_result_pdf(edition:Edition)->BytesIO:
 @login_required
 @admin_required
 def pdf_result(event_name: str, edition_name: str)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     edition:Edition = event.editions.filter_by(name=edition_name).first_or_404()
     return cast(Response,send_file(get_result_pdf(edition), download_name='result.pdf', as_attachment=bool(request.args.get('download', False))))
 
@@ -152,7 +152,7 @@ def get_result_excel(edition:Edition)->BytesIO:
 @login_required
 @admin_required
 def xlsx_result(event_name: str, edition_name: str)->str|Response:
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     edition:Edition = event.editions.filter_by(name=edition_name).first_or_404()
     return cast(Response,send_file(get_result_excel(edition), download_name='result.xlsx', as_attachment=bool(request.args.get('download', False))))
 
@@ -161,7 +161,7 @@ def xlsx_result(event_name: str, edition_name: str)->str|Response:
 @admin_required
 def result_page(event_name: str, edition_name: str)->str|Response:
     user = current_user
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     edition:Edition = event.editions.filter_by(name=edition_name).first_or_404()
 
     data = {}

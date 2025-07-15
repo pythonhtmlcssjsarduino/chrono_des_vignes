@@ -23,11 +23,9 @@ from wtforms import validators
 from datetime import datetime
 
 from chrono_des_vignes.models import get_column_max_length
-from chrono_des_vignes import db
+from chrono_des_vignes import Base, db
 from wtforms import StringField, DateTimeField
 from wtforms.form import BaseForm
-
-Base = db.Model
 
 class Email(validators.Email):
     def __init__(self, message:str|None=None):

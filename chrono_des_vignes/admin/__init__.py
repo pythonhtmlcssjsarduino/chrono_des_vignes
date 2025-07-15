@@ -20,6 +20,7 @@
 
 from flask import Blueprint, render_template, flash, redirect
 from flask_login import login_required, current_user
+from icecream import ic
 from chrono_des_vignes import admin_required, set_route, db, lang_url_for as url_for
 from chrono_des_vignes.models import Event
 from .form import EventForm, NewEventForm
@@ -39,7 +40,7 @@ admin.register_blueprint(coureurs)
 @login_required
 @admin_required
 def delete_event(event_name: str)->str|Response:
-    event:Event = Event.query.filter_by(name=event_name).first_or_404()
+    event:Event = Event.query().filter_by(name=event_name).first_or_404()
     if event.parcours.count() or event.editions.count():
         flash(_('flash.event_not_deleted'), 'danger')
         return redirect(url_for('admin.home_event', event_name=event.name))
@@ -77,7 +78,9 @@ def new_event()->str|Response:
 @admin_required
 def home_event(event_name:str)->str|Response:
     #* page to access and modify an event
-    event_data:Event = Event.query.filter_by(name=event_name).first()#type: ignore[assignment]
+    event_data = Event.query().filter_by(name=event_name).first_or_404()
+
+    ic(event_data)
     user = current_user
 
     event_form = EventForm(data={
@@ -85,7 +88,7 @@ def home_event(event_name:str)->str|Response:
     })
 
     if event_form.validate_on_submit():
-        event_data.description = event_form.description.data#type: ignore[assignment]
+        event_data.description = event_form.description.data
         db.session.commit()
         flash('l\'évenement a bien été mise a jour.', 'success')
 

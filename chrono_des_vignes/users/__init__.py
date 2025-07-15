@@ -87,7 +87,7 @@ def logout()-> str|Response:
 @set_route(users, '/<event_name>/edition/<edition_name>/inscription', methods=['POST', 'GET'])
 def inscription_page(event_name: str, edition_name: str)-> str|Response:
     user = current_user if current_user.is_authenticated else None
-    event = Event.query.filter_by(name=event_name).first_or_404()
+    event = Event.query().filter_by(name=event_name).first_or_404()
     edition:Edition = event.editions.filter_by(name=edition_name).first_or_404()
     if edition.first_inscription > datetime.now():
         date = edition.first_inscription.strftime('%A %d %B %Y')
@@ -122,13 +122,13 @@ def inscription_page(event_name: str, edition_name: str)-> str|Response:
     else:
         form = Inscription_form()
         choices = edition.parcours
-        form.parcours.choices = [str((p.name, p.description)) for p in choices]#type: ignore[misc]
+        form.parcours.choices = [str((p.name, p.description)) for p in choices]  # pyright: ignore[reportAttributeAccessIssue]
 
         if form.validate_on_submit():
             pwd= form.password.data
             hash_pwd = bcrypt.generate_password_hash(pwd).decode('utf-8')# type: ignore[arg-type]
-            username=f'{form.name.data[:10]}.{form.lastname.data[:10]}'#type: ignore[index]
-            nb = User.query.filter(User.username==username).count()
+            username=f'{form.name.data[:10]}.{form.lastname.data[:10]}'
+            nb = db.session.query(User).filter(User.username==username).count()
             username += f'({nb})' if nb>0 else ''
             user = User(name=form.name.data,
                         lastname=form.lastname.data,
@@ -190,7 +190,7 @@ def modify_profil()-> str|Response:
                             'datenaiss':user.datenaiss,
                             'profil_pic':user.avatar})
     if form.validate_on_submit():
-        if form.username.data == user.name or not User.query.filter_by(name=form.username.data).first():
+        if form.username.data == user.name or not User.query().filter_by(name=form.username.data).first():
             # le nom peut etre utilisé
             user.name=form.name.data
             user.lastname=form.lastname.data
