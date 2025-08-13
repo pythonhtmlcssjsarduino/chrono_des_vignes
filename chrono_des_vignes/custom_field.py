@@ -90,8 +90,12 @@ class MultiCheckboxFieldWithDescription(SelectMultipleField):
     widget = BootstrapListWidgetWithDescription(prefix_label=False)
     option_widget = widgets.CheckboxInput()
 
+class ColorInput(Input):
+    input_type:str = 'color'
+    validation_attrs: list[str] = []
+
 class ColorField(StringField):
-    widget = Input(input_type='color')
+    widget = ColorInput()
 
     def process_formdata(self, valuelist:list[Any])->Any:
         if valuelist:

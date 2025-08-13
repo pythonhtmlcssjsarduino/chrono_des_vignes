@@ -17,6 +17,7 @@
 # 
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
+from ast import literal_eval
 from flask import Blueprint, redirect, render_template, flash, jsonify, abort
 from chrono_des_vignes import app, LANGAGES, lang_url_for as url_for
 from functools import wraps
@@ -114,10 +115,10 @@ def save_translations(translations):#type: ignore
 @dev_required
 def languages():#type: ignore
     langs = export_strings(source='fr', target=[lang for lang in LANGAGES if lang not in ('ids', 'pseudo')])#type: ignore
-    form = langForm()
+    form = langForm(data={'lang_data': str(langs)})
     if form.validate_on_submit():
-        data = eval(form.data.data)#type: ignore
-        save_translations(data)#type: ignore
+        data = literal_eval(form.lang_data.data)
+        save_translations(data)
         os.system('pybabel compile -f -d chrono_des_vignes/translations')
         return redirect(url_for('dev.languages'))
     return render_template('languages.html', langs=langs, form=form)

@@ -310,6 +310,7 @@ def set_route(
 @app.errorhandler(exceptions.MethodNotAllowed)
 @app.errorhandler(exceptions.NotFound)
 @app.errorhandler(exceptions.TooManyRequests)
+@app.errorhandler(exceptions.BadRequest)
 @app.errorhandler(exceptions.ImATeapot)
 def http_error(error: exceptions.HTTPException) -> Response:
     html = render_template("error/simple_error.html", error=error)

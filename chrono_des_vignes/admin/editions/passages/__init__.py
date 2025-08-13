@@ -270,6 +270,9 @@ def set_passage(data: dict[str, Any])->None:
     if not inscription:
         emit('passage_response', {"success": False, 'saved':False, 'error':'not valide dossard', 'request':data}, to=session['room'])
         return
+    if inscription.passages.count() <= 0:
+        emit('passage_response', {"success": False, 'saved':False, 'error':'edition not started', 'request':data}, to=session['room'])
+        return
     
     if inscription.end == 'finish':
         emit('passage_response', {"success": False, 'saved':False, 'error':'has already finish', 'request':data}, to=session['room'])

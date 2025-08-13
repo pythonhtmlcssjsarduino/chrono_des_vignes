@@ -48,7 +48,10 @@
         <p class="mb-0">{{ _('view.evenement') }}</p>
       </div>
       <div class="col-sm-9">
-        <a class="text-decoration-none link-dark" href="{{ url_for('view.view_event_page', event=inscription.event.name) }}"><p class="text-muted mb-0">{{inscription.event.name}}</p></a>
+        <a class="text-decoration-none link-dark"
+          href="{{ url_for('view.view_event_page', event=inscription.event.name) }}">
+          <p class="text-muted mb-0">{{inscription.event.name}}</p>
+        </a>
       </div>
     </div>
     <hr />
@@ -57,19 +60,72 @@
         <p class="mb-0">{{ _('view.parcours') }}</p>
       </div>
       <div class="col-sm-9">
-        <a class="text-decoration-none link-dark" href="{{ url_for('view.view_parcours_page', event_name=inscription.event.name, parcours_name=inscription.parcours.name) }}"><p class="text-muted mb-0">{{inscription.parcours.name}}</p></a>
+        <a class="text-decoration-none link-dark"
+          href="{{ url_for('view.view_parcours_page', event_name=inscription.event.name, parcours_name=inscription.parcours.name) }}">
+          <p class="text-muted mb-0">{{inscription.parcours.name}}</p>
+        </a>
       </div>
     </div>
+    {% if inscription.data.comment %}
+    <hr />
+    <div class="row">
+      <div class="col-sm-3">
+        <p class="mb-0">{{ _('view.comment') }}</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="text-muted mb-0">{{inscription.data.comment}}</p>
+      </div>
+    </div>
+    {% endif %}
     <hr />
     <div class="row">
       <div class="col-sm-3">
         <p class="mb-0">{{ _('view.rdv') }}</p>
       </div>
       <div class="col-sm-9">
-        <a href="{{rdv_url}}" target="_blank" rel="noopener noreferrer" class="text-muted mb-0">{{_('view.opengmap')}} <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+        <a href="{{rdv_url}}" target="_blank" rel="noopener noreferrer" class="text-muted mb-0">{{_('view.opengmap')}}
+          <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
       </div>
     </div>
-    {% if inscription.edition.edition_date >= now and inscription.passages.count() == 0%}
+    {% if inscription.event.createur.id==user_data.id %}
+    <hr/>
+    <div class="row">
+      <div class="col-sm-3">
+        <p class="mb-0">{{ _('view.name') }}</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="text-muted mb-0">
+          {{inscription.inscrit.name}}
+        </p>
+      </div>
+    </div>
+    <hr/>
+    
+    <div class="row">
+      <div class="col-sm-3">
+        <p class="mb-0">{{ _('view.lastname') }}</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="text-muted mb-0">
+          {{inscription.inscrit.lastname}}
+        </p>
+      </div>
+    </div>
+    <hr/>
+    
+    <div class="row">
+      <div class="col-sm-3">
+        <p class="mb-0">{{ _('view.username') }}</p>
+      </div>
+      <div class="col-sm-9">
+        <p class="text-muted mb-0">
+          {{inscription.inscrit.username}}
+        </p>
+      </div>
+    </div>
+    {% endif %}
+    {% if inscription.edition.edition_date >= now and inscription.passages.count() == 0 and
+    inscription.inscrit.id==user_data.id%}
     <hr />
     <div class="row">
       <div class="col-sm-3">
@@ -80,7 +136,8 @@
           {{ _('view.plusparticiper') }}
         </a>
       </div>
-      <div class="modal fade" id="desinscription_modal" tabindex="-1" aria-labelledby="sedesinscrire" aria-hidden="true">
+      <div class="modal fade" id="desinscription_modal" tabindex="-1" aria-labelledby="sedesinscrire"
+        aria-hidden="true">
         <div class="modal-dialog">
           <div class="modal-content">
             <div class="modal-header">
@@ -88,11 +145,12 @@
               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-              
+
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-              <a href="{{ url_for('view.delete_inscription', inscription_id= inscription.id ) }}" class="btn btn-primary">{{ _('view.desinscription') }}</a>
+              <a href="{{ url_for('view.delete_inscription', inscription_id= inscription.id ) }}"
+                class="btn btn-primary">{{ _('view.desinscription') }}</a>
             </div>
           </div>
         </div>
@@ -102,11 +160,6 @@
   </div>
 </div>
 <div style="height: 450px">
-  <iframe
-    id="map"
-    class="w-100 h-100"
-    srcdoc=' {% include "view_map_iframe.html" %} '
-    frameborder="0"
-  ></iframe>
+  <iframe id="map" class="w-100 h-100" srcdoc=' {% include "view_map_iframe.html" %} ' frameborder="0"></iframe>
 </div>
 {% endblock content %}

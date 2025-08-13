@@ -18,9 +18,10 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
-from flask import Blueprint, render_template, redirect
+from flask import Blueprint, flash, render_template, redirect
+from icecream import ic
 from chrono_des_vignes import db, set_route, lang_url_for as url_for
-from chrono_des_vignes.models import Event, Inscription, Edition
+from chrono_des_vignes.models import Event, Inscription
 from chrono_des_vignes.admin.parcours import create_map_and_alt_graph
 from flask_login import current_user, login_required
 from datetime import datetime
@@ -46,10 +47,12 @@ def delete_inscription(inscription_id: str)->str|Response:
 @login_required
 def view_inscription_page(inscription_id:str)->str|Response:
     user = current_user
-    inscription = assert404(user.inscriptions.filter_by(id=inscription_id).first(), _('view.error.notyourinscription'))
+    inscription = assert404(Inscription.query().filter_by(id=inscription_id).first())
     edition = inscription.edition
     parcours = inscription.parcours
-    if inscription.inscrit != user:
+    #ic(inscription, user)
+    if inscription.inscrit.id != user.id and inscription.event.createur.id != user.id:
+        flash(_('view.error.notyourinscription'), 'warning')
         return redirect(url_for('home'))
 
     rdv_url= "https://www.google.com/maps/place/{0}%C2%B0{1}'{2}".format(*deg_to_dms(edition.rdv_lat))+"%22N+{0}%C2%B0{1}'{2}".format(*deg_to_dms(edition.rdv_lng))+f"%22E/@{edition.rdv_lat},{edition.rdv_lng},15z"

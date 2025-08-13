@@ -2,6 +2,7 @@
 sql-dumps
 .vscode
 release.zip
+tests/
 
 
 # Byte-compiled / optimized / DLL files

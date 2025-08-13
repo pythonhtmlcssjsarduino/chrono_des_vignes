@@ -19,23 +19,21 @@
 '''
 
 from flask_wtf import FlaskForm
-from wtforms import StringField, DateTimeLocalField, FloatField, SubmitField, TextAreaField, EmailField, DateField, IntegerField, TelField
-from chrono_des_vignes.custom_validators import DataRequired, Length, DateTimeNotPast, DateTimeBefore, InputRequired, Email
+from wtforms import StringField, SubmitField, EmailField, DateField, IntegerField, TelField, TextAreaField
+from chrono_des_vignes.custom_validators import DataRequired, Email
 from chrono_des_vignes.custom_field import MultiCheckboxFieldWithDescription
 from flask_babel import lazy_gettext as _
 from chrono_des_vignes.models import User
-from wtforms.validators import Optional
 from chrono_des_vignes.custom_validators import DbLength
 
 class NewCoureurForm(FlaskForm):
     name: StringField = StringField(_('form.name'), validators=[DbLength(table=User, column='name')])
     lastname: StringField = StringField(_('form.lastname'), validators=[DbLength(table=User, column='lastname')])
     username: StringField = StringField(_('form.username'))
-    email: EmailField = EmailField(_('form.email'), validators=[Optional(), Email()])
-    phone: TelField = TelField(_('form.tel'))
     datenaiss: DateField = DateField(_('form.birth'), validators=[DataRequired()])
 
     parcours: MultiCheckboxFieldWithDescription = MultiCheckboxFieldWithDescription(_('form.choosedparcours'), validators=[DataRequired()])
+    comment: TextAreaField = TextAreaField(_('form.comment'), render_kw={'style':'height:200px'})
 
     submit_btn: SubmitField = SubmitField(_('form.register'))
 
@@ -43,10 +41,11 @@ class ValidateNewCoureurForm(FlaskForm):
     user_id: IntegerField = IntegerField('user_id', validators=[DataRequired()])
     
     name: StringField = StringField(_('form.name'), validators=[DbLength(table=User, column='name')])
+
     lastname: StringField = StringField(_('form.lastname'), validators=[DbLength(table=User, column='lastname')])
     username: StringField = StringField(_('form.username'))
-    email: EmailField = EmailField(_('form.email'), validators=[Optional(), Email()])
-    phone: TelField = TelField(_('form.tel'))
+
     datenaiss: DateField = DateField(_('form.birth'), validators=[DataRequired()])
 
     parcours: MultiCheckboxFieldWithDescription = MultiCheckboxFieldWithDescription(_('form.choosedparcours'), validators=[DataRequired()])
+    comment: TextAreaField = TextAreaField(_('form.comment'), render_kw={'style':'height:200px'})

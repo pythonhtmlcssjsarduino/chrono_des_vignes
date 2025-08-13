@@ -94,7 +94,7 @@ class User(UserMixin, Model):
     datenaiss: Mapped[datetime] = mapped_column(nullable=False, repr=False)
 
     admin: Mapped[bool] = mapped_column(nullable=False, default=False, repr=True)
-    creation_date: Mapped[datetime] = mapped_column(nullable=False, default=datetime.now, repr=False)
+    creation_date: Mapped[datetime] = mapped_column(nullable=False, default_factory=datetime.now, repr=False)
     avatar: Mapped[str] = mapped_column(String(80), nullable=False, default=DEFAULT_PROFIL_PIC, repr=False)
     
     creations:DynamicMapped[Event]=relationship('Event', back_populates='createur', lazy='dynamic', query_class=BaseAppenderQuery, init=False, repr=False)
@@ -108,7 +108,7 @@ class Event(Model):
     createur_id: Mapped[int] = mapped_column(ForeignKey('user.id'), nullable=False, repr=False)
     createur: Mapped[User] = relationship('User', back_populates='creations',lazy='select', repr=True, init=False)
 
-    creation_date: Mapped[datetime] = mapped_column(nullable=False, default=datetime.now, repr=False)
+    creation_date: Mapped[datetime] = mapped_column(nullable=False, default_factory=datetime.now, repr=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default='', repr=False)
 
     parcours: DynamicMapped[Parcours] = relationship('Parcours', back_populates='event', lazy='dynamic', repr=False, init=False)
@@ -142,7 +142,7 @@ class Parcours(Model):
     editions:DynamicMapped[Edition] = relationship('Edition', secondary=editions_parcours, back_populates='parcours', lazy ='dynamic', init=False)
     inscriptions:DynamicMapped[Inscription]=relationship('Inscription', back_populates='parcours', lazy='dynamic', init=False)
 
-    creation_date:Mapped[datetime]=mapped_column(DateTime, nullable=False, default=datetime.now)
+    creation_date:Mapped[datetime]=mapped_column(DateTime, nullable=False, default_factory=datetime.now)
     description: Mapped[str] = mapped_column(Text, nullable=False, default='')
     archived:Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     chronos_list:Mapped[str] = mapped_column(Text, nullable=False, default='[]')
@@ -151,6 +151,10 @@ class Parcours(Model):
     # region
     def __len__(self):
         return len(tuple(self))
+    
+    @property
+    def description_html(self)-> str:
+        return get_html_from_markdown(self.description)
 
     def __iter__(self) ->Iterator[Stand|Trace]:
         start = self.start_stand
@@ -202,7 +206,7 @@ class Parcours(Model):
         return dist_list
 
     def get_nb_turns(self)->int:
-        return max([t.turn_nb for t in self.traces])#type: ignore[no-any-return]
+        return max([t.turn_nb for t in self.traces]+[0])
 
     # endregion
 
@@ -218,7 +222,7 @@ class Stand(Model):
     start_stand:Mapped[int|None] = mapped_column(Integer, ForeignKey('parcours.id'), nullable=True)
     # id du parcours dont il est la fin (le meme que parcours_id) ne rien mettre si pas le dernier
     end_stand:Mapped[int|None] = mapped_column(Integer, ForeignKey('parcours.id'), nullable=True)
-    color:Mapped[Color] = mapped_column(ColorType , nullable =False, default=lambda:Color('red'))
+    color:Mapped[Color] = mapped_column(ColorType , nullable =False, default_factory=lambda:Color('red'))
     chrono:Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     #traces qui partent de ce stand
     start_trace:DynamicMapped[Trace]=relationship('Trace', back_populates='start', foreign_keys='Trace.start_id', lazy='dynamic', init=False)
@@ -302,7 +306,7 @@ class Edition(Model):
     first_inscription:Mapped[datetime] = mapped_column( DateTime, nullable=False)
     last_inscription:Mapped[datetime] =mapped_column( DateTime, nullable=False)
     description:Mapped[str] = mapped_column(Text, nullable=False, default='')
-    creation_date:Mapped[datetime]=mapped_column(DateTime, nullable=False, default=datetime.now)
+    creation_date:Mapped[datetime]=mapped_column(DateTime, nullable=False, default_factory=datetime.now)
     rdv_lat:Mapped[float] = mapped_column( Float, nullable=False, default=46.58)
     rdv_lng:Mapped[float] = mapped_column( Float, nullable=False, default=6.52)
     passage_keys:DynamicMapped[PassageKey]=relationship('PassageKey', back_populates='edition', foreign_keys='PassageKey.edition_id', lazy='dynamic', init=False)
@@ -325,8 +329,12 @@ class Inscription(Model):
     dossard:Mapped[int|None]=mapped_column(Integer, nullable=True, init=False)
     passages:DynamicMapped[Passage]=relationship('Passage', back_populates='inscription', lazy='dynamic', init=False)
     end:Mapped[str|None]=mapped_column(String(10), nullable=True, init=False) # abandon, disqual, absent, finish or None
-    creation_date:Mapped[datetime]=mapped_column(DateTime, nullable=False, default=datetime.now)
-    present:Mapped[bool]=mapped_column(Boolean, nullable=False, default=False)
+    
+    data_id:Mapped[int|None]=mapped_column(Integer, ForeignKey('inscription_data.id'), nullable=True)
+    data:Mapped[InscriptionData|None]=relationship('InscriptionData', back_populates='inscriptions', lazy='select', init=False)
+    
+    creation_date:Mapped[datetime]=mapped_column(DateTime, nullable=False, default_factory=datetime.now, init=False)
+    present:Mapped[bool]=mapped_column(Boolean, nullable=False, default=False, init=False)
     __tablename__:str = 'inscription'
     # region funcs
     def has_started(self)->bool:
@@ -420,7 +428,7 @@ class PassageKey(Model):
     passages:DynamicMapped[Passage]=relationship('Passage', back_populates='key', lazy='dynamic', init=False)
     key:Mapped[str]=mapped_column(String(20), nullable=False, unique=True)
     name:Mapped[str]=mapped_column(String(40), nullable=False)
-    creation_date:Mapped[datetime]=mapped_column(DateTime, nullable=False, default=datetime.now)
+    creation_date:Mapped[datetime]=mapped_column(DateTime, nullable=False, default_factory=datetime.now)
     __tablename__:str = 'passage_key'
 
 class Passage(Model):
@@ -441,3 +449,10 @@ class Passage(Model):
                 stand = self.inscription.parcours.start_stand
         return stand
 
+class InscriptionData(Model):
+    id:Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
+    inscriptions:DynamicMapped[Inscription]=relationship('Inscription', back_populates='data', lazy='dynamic', init=False)
+
+    comment:Mapped[str|None]=mapped_column(Text, nullable=True, default='')
+
+    __tablename__:str = 'inscription_data'

@@ -1,4 +1,25 @@
+<!--
+ * Chrono Des Vignes
+ * a timing system for sports events
+ * 
+ * Copyright © 2025 Romain Maurer
+ * This file is part of Chrono Des Vignes
+ * 
+ * Chrono Des Vignes is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free Software Foundation,
+ * either version 3 of the License, or (at your option) any later version.
+ * 
+ * Chrono Des Vignes is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ * You should have received a copy of the GNU General Public License along with Foobar.
+ * If not, see <https://www.gnu.org/licenses/>.
+ * 
+ * You may contact me at chrono-des-vignes@ikmail.com
+-->
+
 <!-- Modal -->
+
 {% from 'macro.html' import form_field, submit %}
 <div class="modal fade show" id="new_coureur_modal" tabindex="-2" aria-labelledby="new_edition_label"
     aria-hidden='true'>
@@ -14,10 +35,9 @@
                     {{ form_field(form.name) }}
                     {{ form_field(form.lastname) }}
                     {{ form_field(form.username) }}
-                    {{ form_field(form.email) }}
-                    {{ form_field(form.phone) }}
                     {{ form_field(form.datenaiss) }}
                     {{ form_field(form.parcours) }}
+                    {{ form_field(form.comment) }}
                     <input type="text" name="user_id" class="d-none">
                 </form>
             </div>

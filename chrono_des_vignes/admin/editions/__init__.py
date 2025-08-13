@@ -18,11 +18,14 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
+from typing import Any, cast
+
+
 from flask import Blueprint, flash, render_template, redirect
 from chrono_des_vignes import admin_required, db, set_route, lang_url_for as url_for
 from chrono_des_vignes.admin.editions.form import Edition_form
 from flask_login import login_required, current_user
-from chrono_des_vignes.lib import assert404
+from chrono_des_vignes.lib import assert400, assert404
 from chrono_des_vignes.models import  Event, Parcours, Edition
 from datetime import datetime
 from .dossard import dossard
@@ -50,17 +53,17 @@ def editions_page(event_name: str)->str|Response:
     if form.validate_on_submit():
         if not event.editions.filter_by(name=form.name.data).first():
             #ok nom pas utilisé
-            parcours = [eval(p)[0] for p in form.parcours.data]# type: ignore[union-attr]
-            parcours = event.parcours.filter(Parcours.name.in_(parcours)).all()
+            parcours_id= [cast(int, eval(p)[0]) for p in cast(list[str], (assert400(form.parcours.data)))]# type: ignore[union-attr]
+            parcours = event.parcours.filter(Parcours.name.in_(parcours_id)).all()
             edition = Edition(name = form.name.data,
                               event_id=event.id,
-                              parcours=parcours,
                               edition_date=form.edition_date.data,
                               description = form.description.data,
                               first_inscription=form.first_inscription.data,
                               last_inscription=form.last_inscription.data,
                               rdv_lat=form.rdv_lat.data,
                               rdv_lng=form.rdv_lng.data)
+            edition.parcours = parcours
             db.session.add(edition)
             db.session.commit()
             flash('edition bien crée', 'success')

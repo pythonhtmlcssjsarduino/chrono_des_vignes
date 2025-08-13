@@ -33,7 +33,7 @@
         </ul>
     </div>
     <br>
-    <input type="number" class="form-control form-control-lg" id="dossard_input" placeholder="{{ _('admin.editions.passages.enterdossardnb') }}">
+    <input type="text" class="form-control form-control-lg" id="dossard_input" placeholder="{{ _('admin.editions.passages.enterdossardnb') }}">
     <br>
     <div class="d-flex w-100">
         <div class="w-50">
@@ -269,7 +269,9 @@
                 }else if (e.code === 'Backspace'){
                     input.value = '' // reset le champ
                 } else if (e.code === 'Enter') {
+                    console.log(input.value+'')
                     var data = parseInt(input.value);
+                    console.log(data, input.value+'')
                     input.value = ''
                     if ( !isNaN(data) ) {
                         send_request(data) // send the request to the server if it is a number

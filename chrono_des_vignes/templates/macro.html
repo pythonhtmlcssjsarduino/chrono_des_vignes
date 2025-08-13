@@ -39,14 +39,14 @@
         {{ field.label(class="col-sm-"+label_span+" col-form-label text-start") }}
         <div class="col-sm-{{input_span}}">
             {% if field.errors %}
-                {{ field(class="form-control form-control-lg"+(" is-invalid" if error else ""), id=input_id) }}
+                {{ field(class="form-control form-control-lg is-invalid", id=input_id) }}
                 <div class="invalid-feedback">
                     {% for error in field.errors %}
                         <span>{{ error }}</span>
                     {% endfor %}
                 </div>
             {% else %}
-                {{ field(class="form-control form-control-lg"+(" is-invalid" if error else ""), id=input_id) }}
+                {{ field(class="form-control form-control-lg", id=input_id) }}
             {% endif %}
         </div>
     </div>
@@ -171,6 +171,9 @@
 {% macro simple_field(field, input_macro, div_class='', input_id=None) %}
     <div class="mb-3 row {{ div_class }}">
         {{ field.label(class="col-sm-"+label_span+" col-form-label text-start") }}
+        {% if not input_id and field.render_kw.id%}
+            {%set input_id = field.render_kw.id%}
+        {% endif %}
         <div class="col-sm-{{input_span}}">
             {% if field.errors %}
                 {{ input_macro(field, input_id, error=True) }}

@@ -18,14 +18,16 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
-from flask import Blueprint, redirect, flash, render_template, request, session
+from typing import cast
+from flask import Blueprint, redirect, flash, render_template, request
 from flask_login import login_required, current_user, login_user, logout_user
-from chrono_des_vignes.models import User, Event, Parcours, Inscription, Edition
-from chrono_des_vignes import app, DEFAULT_PROFIL_PIC, PICTURE_SIZE, username
-from .form import Login_form, Signup_form, Inscription_connected_form, Inscription_form, ModifyForm, ModifyPwdForm
+from chrono_des_vignes.lib import assert400, assert404
+from chrono_des_vignes.models import InscriptionData, User, Event, Parcours, Inscription
+from chrono_des_vignes import app, DEFAULT_PROFIL_PIC, PICTURE_SIZE
+from .form import Login_form, Signup_form, InscriptionConnectedForm, InscriptionForm, ModifyForm, ModifyPwdForm
 from chrono_des_vignes import db, set_route, lang_url_for as url_for, bcrypt
 from sqlalchemy import and_, not_
-from datetime import datetime
+from datetime import datetime, time
 import string
 import secrets
 import os
@@ -38,14 +40,14 @@ alphabet = string.ascii_letters + string.digits
 users = Blueprint('users', __name__, template_folder='templates')
 
 @set_route(users, '/login', methods=['POST', 'GET'])
-def login()->str|Response:
+def login():
     if current_user.is_authenticated:
         return redirect(url_for('home'))
     form = Login_form()
     if form.validate_on_submit():
-        user:User|None = db.session.query(User).filter_by(username=form.username.data).first()
+        user:User|None = db.session.query(User).filter_by(username=assert400(form.username.data)).first()
 
-        if user and bcrypt.check_password_hash(user.password, form.password.data):
+        if user and bcrypt.check_password_hash(user.password, assert400(form.password.data)):
             login_user(user)
             flash(_('flash.connected:name').format(name = user.name), 'success')
             if request.args.get('next'):
@@ -62,13 +64,13 @@ def signup()-> str|Response:
         return redirect(url_for('home'))
     form = Signup_form()
     if form.validate_on_submit():
-        hash_pwd= bcrypt.generate_password_hash(form.password.data).decode('utf-8')# type: ignore[arg-type]
-        user = User(name=form.name.data,
-                    lastname=form.lastname.data,
-                    username=form.username.data,
+        hash_pwd= bcrypt.generate_password_hash(assert400(form.password.data)).decode('utf-8')# type: ignore[arg-type]
+        user = User(name=assert400(form.name.data),
+                    lastname=assert400(form.lastname.data),
+                    username=assert400(form.username.data),
                     email=form.email.data if form.email.data else None,
                     phone=form.phone.data if form.phone.data else None,
-                    datenaiss= form.datenaiss.data,
+                    datenaiss= datetime.combine(assert400(form.datenaiss.data), time.min),
                     password=hash_pwd)
         db.session.add(user)
         db.session.commit()
@@ -88,7 +90,7 @@ def logout()-> str|Response:
 def inscription_page(event_name: str, edition_name: str)-> str|Response:
     user = current_user if current_user.is_authenticated else None
     event = Event.query().filter_by(name=event_name).first_or_404()
-    edition:Edition = event.editions.filter_by(name=edition_name).first_or_404()
+    edition = assert404(event.editions.filter_by(name=edition_name).first())
     if edition.first_inscription > datetime.now():
         date = edition.first_inscription.strftime('%A %d %B %Y')
         # pas encore ouvert
@@ -99,59 +101,80 @@ def inscription_page(event_name: str, edition_name: str)-> str|Response:
         flash(_('flash.warn.inscriptionclosed'), 'warning')
         return redirect(url_for("view.view_edition_page", event_name = event.name, edition_name=edition.name))
 
-    form:Inscription_connected_form|Inscription_form
+    form:InscriptionConnectedForm|InscriptionForm
     if user:
-        form = Inscription_connected_form()
+        form = InscriptionConnectedForm()
         choices = edition.parcours.filter( not_(Parcours.inscriptions.any(and_(Inscription.inscrit==user, Inscription.edition==edition))), Parcours.event==event).all()#type: ignore[no-untyped-call]
-        form.parcours.choices = [str((p.name, p.description)) for p in choices]#type: ignore[misc]
-
+        form.parcours.choices = [str((p.name, p.description)) for p in choices]  # pyright: ignore[reportAttributeAccessIssue]
+        
         if form.validate_on_submit():
-            choices = event.parcours.filter(Parcours.name.in_([eval(data)[0] for data in form.parcours.data])).all()#type: ignore[union-attr]
+            parcours = cast(list[str], assert400(form.parcours.data))
+            choices = event.parcours.filter(Parcours.name.in_([eval(data)[0] for data in parcours])).all()#type: ignore[union-attr]
 
-            inscriptions = []
+            data = InscriptionData.query()\
+            .filter(InscriptionData.inscriptions.any(and_(Inscription.user_id==user.id, Inscription.edition_id==edition.id)),).first()
+            if data is None:
+                data = InscriptionData(form.comment.data if form.comment.data else '')
+                db.session.add(data)
+                db.session.commit()
+                db.session.refresh(data)
+            else:
+                data.comment = form.comment.data if form.comment.data else ''
+
             for parcours in choices:
-                inscriptions.append(Inscription(user_id = user.id,
+                inscription= Inscription(user_id = user.id,
                                                 event_id=event.id,
                                                 edition_id=edition.id,
-                                                parcours_id=parcours.id))
-            db.session.add_all(inscriptions)
+                                                parcours_id=parcours.id,
+                                                data_id=data.id)
+                db.session.add(inscription)
             db.session.commit()
 
             return redirect(url_for('home'))
 
     else:
-        form = Inscription_form()
+        form = InscriptionForm()
         choices = edition.parcours
         form.parcours.choices = [str((p.name, p.description)) for p in choices]  # pyright: ignore[reportAttributeAccessIssue]
 
         if form.validate_on_submit():
-            pwd= form.password.data
+            pwd= assert400(form.password.data)
             hash_pwd = bcrypt.generate_password_hash(pwd).decode('utf-8')# type: ignore[arg-type]
-            username=f'{form.name.data[:10]}.{form.lastname.data[:10]}'
+            username=f'{assert400(form.name.data)[:10]}.{assert400(form.lastname.data)[:10]}'
             nb = db.session.query(User).filter(User.username==username).count()
             username += f'({nb})' if nb>0 else ''
-            user = User(name=form.name.data,
-                        lastname=form.lastname.data,
+            user = User(name=assert400(form.name.data),
+                        lastname=assert400(form.lastname.data),
                         username=username,
                         email=form.email.data if form.email.data else None,
                         phone=form.phone.data if form.phone.data else None,
-                        datenaiss= form.datenaiss.data,
+                        datenaiss= datetime.combine(assert400(form.datenaiss.data), time.min),
                         password=hash_pwd,)
             db.session.add(user)
             db.session.commit()
             db.session.refresh(user)
             login_user(user)
             #print(user, form.parcours.data)
-            choices = event.parcours.filter(Parcours.name.in_([eval(data)[0] for data in form.parcours.data])).all()#type: ignore[union-attr]
+            parcours = cast(list[str], assert400(form.parcours.data))
+            choices = event.parcours.filter(Parcours.name.in_([eval(data)[0] for data in parcours])).all()
 
-            inscriptions = []
+            data = InscriptionData.query()\
+            .filter(InscriptionData.inscriptions.any(and_(Inscription.user_id==user.id, Inscription.edition_id==edition.id)),).first()
+            if data is None:
+                data = InscriptionData(form.comment.data if form.comment.data else '')
+                db.session.add(data)
+                db.session.commit()
+                db.session.refresh(data)
+            else:
+                data.comment = form.comment.data if form.comment.data else ''
+
             for parcours in choices:
-                inscriptions.append(Inscription(user_id = user.id,
+                inscription=Inscription(user_id = user.id,
                                                 event_id=event.id,
                                                 edition_id=edition.id,
-                                                parcours_id=parcours.id))
-            print(inscriptions)
-            db.session.add_all(inscriptions)
+                                                parcours_id=parcours.id,
+                                                data_id=data.id)
+                db.session.add(inscription)
             db.session.commit()
 
             return redirect(url_for('home'))
@@ -165,11 +188,11 @@ def profil()-> str|Response:
 
 def save_avatar(form_picture:FileStorage, old_picture_name: str|None=None)-> str:
     random_hex = secrets.token_hex(8)
-    _, f_ext = os.path.splitext(form_picture.filename)#type:ignore[type-var]
+    _, f_ext = os.path.splitext(assert400(form_picture.filename))
     picture_name = f'{random_hex}{f_ext}'
     picture_path = os.path.join(app.root_path, 'static/profil_pics', picture_name)
 
-    i = Image.open(form_picture)
+    i = Image.open(form_picture)  # pyright: ignore[reportArgumentType]
     i.thumbnail(PICTURE_SIZE)
     i.save(picture_path)
 
@@ -192,13 +215,13 @@ def modify_profil()-> str|Response:
     if form.validate_on_submit():
         if form.username.data == user.name or not User.query().filter_by(name=form.username.data).first():
             # le nom peut etre utilisé
-            user.name=form.name.data
-            user.lastname=form.lastname.data
-            user.username=form.username.data
+            user.name=assert400(form.name.data)
+            user.lastname=assert400(form.lastname.data)
+            user.username=assert400(form.username.data)
             user.email=form.email.data if form.email.data else None
             user.phone=form.phone.data if form.phone.data else None
-            user.datenaiss= form.datenaiss.data
-            if form.profil_pic.data and isinstance(form.profil_pic.data, FileStorage):
+            user.datenaiss= datetime.combine(assert400(form.datenaiss.data), time.min)
+            if form.profil_pic.data:
                 user.avatar = save_avatar(form.profil_pic.data, user.avatar)
             db.session.commit()
             flash(_('flash.profilupdated'), 'success')
@@ -208,7 +231,6 @@ def modify_profil()-> str|Response:
 
     return render_template('modify_profil.html', user_data=user, form=form)
 
-
 @set_route(users, '/profil/updatepwd', methods=['get', 'post'])
 @login_required
 def modify_password()-> str|Response:
@@ -216,8 +238,8 @@ def modify_password()-> str|Response:
     form:ModifyPwdForm = ModifyPwdForm()
 
     if form.validate_on_submit():
-        if bcrypt.check_password_hash(user.password, form.old_pwd.data):# type: ignore[arg-type]
-            hash_pwd= bcrypt.generate_password_hash(form.password.data).decode('utf-8')# type: ignore[arg-type]
+        if bcrypt.check_password_hash(user.password, assert400(form.old_pwd.data)):# type: ignore[arg-type]
+            hash_pwd= bcrypt.generate_password_hash(assert400(form.password.data)).decode('utf-8')# type: ignore[arg-type]
             user.password = hash_pwd
             db.session.commit()
             return redirect(url_for('users.profil'))

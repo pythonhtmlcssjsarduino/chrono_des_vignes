@@ -25,9 +25,13 @@ from time import time
 from datetime import timedelta, datetime
 from urllib.parse import quote
 
-def assert404[T](val:T|None, msg:str|None) -> T:
+def assert404[T](val:T|None, msg:str|None=None) -> T:
+    return assertHttp(val, msg, 404)
+def assert400[T](val:T|None, msg:str|None=None) -> T:
+    return assertHttp(val, msg, 400)
+def assertHttp[T](val:T|None, msg:str|None=None, code:int=404) -> T:
     if val is None:
-        abort(404, msg)
+        abort(code, msg)
     return val
 
 def midpoint(latlng1: tuple[float, float], latlng2: tuple[float, float])-> tuple[float, float]:

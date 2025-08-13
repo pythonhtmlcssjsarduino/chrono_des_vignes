@@ -27,7 +27,7 @@ from flask_babel import lazy_gettext as _
 class Edition_form(FlaskForm):
     name: StringField = StringField(_('form.edition_name'), validators=[DataRequired(), Length(max=40)])
     edition_date: DateTimeLocalField = DateTimeLocalField(_('form.edition_date'), format='%Y-%m-%dT%H:%M', render_kw={}, validators=[DataRequired(), DateTimeNotPast()])
-    description: TextAreaField = TextAreaField(_('form.description'), render_kw={'style':'height:200px'})
+    description: TextAreaField = TextAreaField(_('form.description'), render_kw={'style':'height:200px', 'id':'markdown-textarea'})
     parcours: MultiCheckboxFieldWithDescription = MultiCheckboxFieldWithDescription(_('form.parcours'), validators=[DataRequired()])
     first_inscription: DateTimeLocalField = DateTimeLocalField(_('form.firstinscriptiondate'), format='%Y-%m-%dT%H:%M', render_kw={}, validators=[DataRequired(), DateTimeNotPast(), DateTimeBefore('last_inscription')])
     last_inscription: DateTimeLocalField = DateTimeLocalField(_('form.lastinscriptiondate'), format='%Y-%m-%dT%H:%M', render_kw={}, validators=[DataRequired(), DateTimeNotPast(), DateTimeBefore('edition_date')])

@@ -18,7 +18,9 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
+from ast import literal_eval
 from flask import Blueprint, flash, redirect, render_template, request, abort
+from icecream import ic
 from chrono_des_vignes import admin_required, db, set_route, lang_url_for as url_for
 from .form import  Parcours_name_form, Etape_modif_form, Stand_modif_form, New_parcours_form
 from flask_login import login_required, current_user
@@ -26,11 +28,11 @@ from chrono_des_vignes.models import Event, Stand, Trace, Parcours
 from folium import Map, Marker, Icon, PolyLine, Popup, LayerControl, TileLayer
 from folium.template import Template
 from colour import Color
-from chrono_des_vignes.lib import assert404, get_points_elevation, calc_points_dist, midpoint
+from chrono_des_vignes.lib import assert400, assert404, get_points_elevation, calc_points_dist, midpoint
 from sqlalchemy import or_
 from werkzeug.wrappers.response import Response
 from flask_wtf import FlaskForm
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict, cast
 
 parcours_bp = Blueprint('parcours', __name__, template_folder='templates')
 
@@ -42,7 +44,7 @@ def delete_parcours_page(event_name: str, parcours_name: str)->str|Response:
     parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
     if parcours.editions.count()>0:
         flash('action impossible le parcours est déjà utilisé dans une edition.', 'danger')
-        return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
+        return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
     for e in tuple(parcours):
         db.session.delete(e)
     db.session.delete(parcours)
@@ -63,7 +65,7 @@ def copy_parcours(event_name:str, parcours_name:str)->str|Response:
     db.session.commit()
     db.session.refresh(p)
     old_stands = Stand.query().filter_by(parcours_id=parcours.id).all()
-    old_to_new_id = {}
+    old_to_new_id: dict[int, int] = {}
     for old_stand in old_stands:
         new_stand = Stand(name=old_stand.name,
                                 lat=old_stand.lat,
@@ -119,14 +121,14 @@ def parcours_page(event_name:str)->str|Response:
         if not event.parcours.filter_by(name=form.name.data).first():
             #ok nom pas utilisé
 
-            p = Parcours(name=form.name.data, event_id=event.id)
+            p = Parcours(name=assert400(form.name.data), event_id=event.id)
             db.session.add(p)
             db.session.commit()
             db.session.refresh(p)
             s= Stand(name=f'debut-{form.name.data}'[:36],
                             parcours_id=p.id,
-                            lat=form.start_lat.data,
-                            lng=form.start_lng.data,
+                            lat=assert400(form.start_lat.data),
+                            lng=assert400(form.start_lng.data),
                             chrono=True,
                             start_stand=p.id,
                             end_stand=p.id,
@@ -134,7 +136,7 @@ def parcours_page(event_name:str)->str|Response:
             db.session.add(s)
             db.session.commit()
 
-            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=form.name.data))
+            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=form.name.data, force_modif=request.args.get('force_modif', None)))
         else:
             form.name.errors = list(form.name.errors)+['vous utiliser deja ce nom.']
     active_parcours = event.parcours.filter_by(archived=False).all()
@@ -142,7 +144,7 @@ def parcours_page(event_name:str)->str|Response:
     
     return render_template("parcours.html", user_data=user, event_data=event, archived_parcours=archived_parcours, active_parcours=active_parcours, event_modif=True, form=form)
 
-def build_alt_graph(graph_data:list[Stand|Trace])->Any|None:
+def build_alt_graph(graph_data:list[Stand|Trace])->Any|None:  # pyright: ignore[reportExplicitAny]
     return None
     
     points = []  # pyright: ignore[reportUnreachable]
@@ -187,8 +189,37 @@ def build_alt_graph(graph_data:list[Stand|Trace])->Any|None:
 
     return points
 
+class MarkerDict(TypedDict):
+    lat: float
+    lng: float
+    name: str
 
-def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[float, float]|None=None, current_stand_id:str|None=None, current_trace_id: str|None=None)-> Any:
+class TraceItem(TypedDict):
+    type: Literal['trace']
+    name: str
+    id: int
+    trace: list[tuple[float, float]]  # assuming it's a list of coordinates
+
+class MarkerItem(TypedDict):
+    type: Literal['marker']
+    lat: float
+    lng: float
+    name: str
+    id: int
+    color: str
+    step: int
+
+def make_popup(callback: str):
+    popup = Popup()
+    template = """  
+                var {{this.get_name()}} = L.popup({{ this.options|tojson }});
+                {{ this._parent.get_name() }}.on("click", function() {%s})
+                """%callback
+    popup._template = Template(template)# pyright: ignore[reportPrivateUsage]
+    return popup
+
+
+def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[float, float]|None=None, current_stand_id:int|None=None, current_trace_id: str|None=None):
      #! create the map
     map_style = request.args.get('map', 'osm')
     map_styles:dict[str, dict[str, str|int|None]]={'topo':{'tiles':'https://tile.opentopomap.org/{z}/{x}/{y}.png',
@@ -205,14 +236,14 @@ def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[fl
                         'max_zoom':20}}
     map_styles = {k:v if k==map_style else {**v, 'show':False} for k,v in map_styles.items()}
 
-    program_list=[]
+    program_list:list[TraceItem|MarkerItem]=[]
     part_list:list[Stand|Trace] = []
     marker_coordonee:list[tuple[float, float]] = []
-    stands=set()
-    next_path_name =[]
-    last_path_name = []
-    markers_name = []
-    chrono_list = []
+    stands=set[int]()
+    next_path_name:list[str] =[]
+    last_path_name:list[str] = []
+    markers_name:list[MarkerDict] = []
+    chrono_list:list[int] = []
     start = parcours.start_stand
     map = Map(max_zoom=22,
             location=(0,0),
@@ -221,20 +252,18 @@ def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[fl
     # si aucun depart alors ne mettre aucun stand
     if start:
         if modif:
-            popup = Popup()
-            popup._template = Template("""
-                var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                {{ this._parent.get_name() }}.on("click", function() {on_marker_click(%s)})
-                """%start.id)
+            popup = make_popup('on_marker_click(%s)'%start.id)
+        else:
+            popup = None
         last_m:Marker=Marker((start.lat, start.lng),
                 tooltip=start.name,
-                icon=Icon(icon_color=start.color.hex, icon='flag-checkered', prefix='fa', color='orange' if new_stand.id != current_stand_id else 'green'),
-                popup=popup if modif else None)
+                icon=Icon(icon_color=start.color.get_hex(), icon='flag-checkered', prefix='fa', color='orange' if new_stand.id != current_stand_id else 'green'),
+                popup=popup)
         last_m.add_to(map)
         element_name = last_m.get_name()
         part_list.append(start)
-        program_list.append({'type':'marker', 'lat':start.lat, 'lng':start.lng, 'name':start.name, 'id':start.id, 'color':start.color.hex, 'step':0})
-        stands.add(start)
+        program_list.append({'type':'marker', 'lat':start.lat, 'lng':start.lng, 'name':start.name, 'id':start.id, 'color':start.color.get_hex(), 'step':0})
+        stands.add(start.id)
         chrono_list.append(start.id)
         turn_nb = 0
         step =0
@@ -249,48 +278,41 @@ def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[fl
                 new_stand = trace.end
                 if new_stand.chrono :
                     chrono_list.append(new_stand.id)
-                if new_stand not in stands:
+                if new_stand.id not in stands:
                     if modif:
-                        popup = Popup()
-                        popup._template = Template("""
-                                var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                                {{ this._parent.get_name() }}.on("click", function() {on_marker_click(%s)})
-                                """%new_stand.id)
+                        popup = make_popup('on_marker_click(%s)'%new_stand.id)
+                        popup = None
                     last_m=Marker((new_stand.lat, new_stand.lng),
                         tooltip=new_stand.name,
-                        icon=Icon(icon_color=new_stand.color.hex, prefix='fa', icon='stopwatch' if new_stand.chrono else 'circle-info'),
+                        icon=Icon(icon_color=new_stand.color.get_hex(), prefix='fa', icon='stopwatch' if new_stand.chrono else 'circle-info'),
                         popup=popup if modif else None)
                     last_m.add_to(map)
                     if current_stand_id is not None and new_stand.id == current_stand_id :
-                        last_m.icon.options['markerColor']='green'
+                        last_m.icon.options['markerColor']='green'  # pyright: ignore[reportUnknownMemberType]
                         element_name = last_m.get_name()
 
                     # plus pour savoir si le stand est deja sur la map et la mettre sur la liste des programme
-                    stands.add(new_stand)
+                    stands.add(new_stand.id)
 
                 part_list.append(trace)
                 part_list.append(new_stand)
 
                 program_list.append({'type':'trace', 'name':trace.name, 'id':trace.id, 'trace':eval(trace.trace)})
-                program_list.append({'type':'marker', 'lat':new_stand.lat, 'lng':new_stand.lng, 'name':new_stand.name, 'id':new_stand.id, 'color':new_stand.color.hex, 'step':step})
+                program_list.append({'type':'marker', 'lat':new_stand.lat, 'lng':new_stand.lng, 'name':new_stand.name, 'id':new_stand.id, 'color':new_stand.color.get_hex(), 'step':step})
 
-                poly_points = [(old_stand.lat, old_stand.lng ),*((lat, lng) for lat, lng, _ in eval(trace.trace)),(new_stand.lat, new_stand.lng)]
+                poly_points = [(old_stand.lat, old_stand.lng ),*((lat, lng) for lat, lng, _ in cast(list[tuple[float, float, float]], literal_eval(trace.trace))),(new_stand.lat, new_stand.lng)]
                 marker_coordonee += poly_points
                 if modif:
-                    popup = Popup()
-                    popup._template = Template("""
-                                var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                                {{ this._parent.get_name() }}.on("click", function() {on_trace_click(%s)})
-                                """%trace.id)
+                    popup = make_popup('on_trace_click(%s)'%trace.id)
                 if str(trace.id)!=current_trace_id:
                     poly = PolyLine(poly_points, tooltip=trace.name, popup=popup if modif else None).add_to(map)#type: ignore
                 if current_stand_id is not None and new_stand.id == current_stand_id :
-                    last_path_name.append(poly.get_name())
+                    last_path_name.append(poly.get_name())  # pyright: ignore[reportPossiblyUnboundVariable]
                 elif current_stand_id is not None and old_stand.id == current_stand_id :
-                    next_path_name.append(poly.get_name())
+                    next_path_name.append(poly.get_name())  # pyright: ignore[reportPossiblyUnboundVariable]
             else:
-                last_m.icon.options['icon']='flag-checkered'
-                last_m.icon.options['prefix']='fa'
+                last_m.icon.options['icon']='flag-checkered'  # pyright: ignore[reportUnknownMemberType]
+                last_m.icon.options['prefix']='fa'  # pyright: ignore[reportUnknownMemberType]
                 break
     else:
         element_name=None
@@ -305,23 +327,15 @@ def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[fl
         trace = Trace.query().filter_by(id=current_trace_id).first()
         if trace is None or trace.parcours != parcours:
             abort(400)
-        points :list[tuple[float, float]]= [(trace.start.lat, trace.start.lng ),*[(lat, lng) for lat, lng, _ in eval(trace.trace)],(trace.end.lat, trace.end.lng)]
+        points :list[tuple[float, float]]= [(trace.start.lat, trace.start.lng ),*[(lat, lng) for lat, lng, _ in cast(list[tuple[float, float, float]], literal_eval(trace.trace))],(trace.end.lat, trace.end.lng)]
         marker_coordonee += points
-        popup = Popup()
-        popup._template = Template("""
-                    var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                    {{ this._parent.get_name() }}.on("click", function() {on_trace_click(%s)})
-                    """%trace.id)
+        popup = make_popup('on_trace_click(%s)'%trace.id)
         line = PolyLine(points, dash_array='5', tooltip=trace.name, popup=popup).add_to(map)#type: ignore
         element_name= line.get_name()
         last_point:tuple[float, float] = points[0]
         i=-1
         for i,( lat, lng) in enumerate(points[1:-1]): # affiche chaque marker d'angle et les signes plus pour ajouter un point
-            popup = Popup()
-            popup._template = Template("""
-                        var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                        {{ this._parent.get_name() }}.on("click", function() {trace_point_modif(%s)})
-                        """%f'{lat}, {lng}')
+            popup = make_popup('trace_point_modif(%s)'%f'{lat}, {lng}')
             # place le marker a l'angle
             marker = Marker((lat, lng),
                     icon=Icon(icon='flag', prefix='fa', color='green'),
@@ -330,11 +344,7 @@ def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[fl
             # affiche le plus pour ajouter un point sur
             # le point central entre les deux points
             midlatlng = midpoint(last_point, (lat,lng))
-            popup = Popup()
-            popup._template = Template("""
-                    var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                    {{ this._parent.get_name() }}.on("click", function() {trace_point_add(%s)})
-                    """%f'{midlatlng[0]}, {midlatlng[1]}, {i}')
+            popup = make_popup('trace_point_add(%s)'%f'{midlatlng[0]}, {midlatlng[1]}, {i}')
             Marker((midlatlng[0], midlatlng[1]),
                     popup=popup,
                     icon=Icon(icon='circle-plus', prefix='fa', color='lightgreen')).add_to(map)
@@ -343,11 +353,7 @@ def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[fl
             last_point = (lat, lng)
         # affiche le dernier point d'ajout
         midlatlng = midpoint(last_point, points[-1])
-        popup = Popup()
-        popup._template = Template("""
-                var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                {{ this._parent.get_name() }}.on("click", function() {trace_point_add(%s)})
-                """%f'{midlatlng[0]}, {midlatlng[1]}, {i+1}')
+        popup = make_popup('trace_point_add(%s)'%f'{midlatlng[0]}, {midlatlng[1]}, {i+1}')
         Marker((midlatlng[0], midlatlng[1]),
                 popup=popup,
                 icon=Icon(icon='circle-plus', prefix='fa', color='lightgreen')).add_to(map)
@@ -360,8 +366,8 @@ def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[fl
     # ? ajout different layer
     #TileLayer('OpenStreetMap', max_zoom=20).add_to(map)
     #TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='satelite', max_zoom=20).add_to(map)
-    for name, data in map_styles.items():
-        TileLayer(**data).add_to(map)#type: ignore
+    for _, data in map_styles.items():
+        TileLayer(**data).add_to(map)#type: ignore  # pyright: ignore[reportArgumentType]
     LayerControl().add_to(map)
 
     if rdv:
@@ -379,7 +385,7 @@ def create_map_and_alt_graph(parcours:Parcours, modif:bool= False, rdv: tuple[fl
 @admin_required
 def modify_parcours(event_name:str, parcours_name:str)->str|Response:
     event = Event.query().filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
 
     return render_modify_parcours(event, parcours)
 
@@ -388,17 +394,17 @@ def modify_parcours(event_name:str, parcours_name:str)->str|Response:
 @admin_required
 def modify_stand(event_name:str, parcours_name:str, stand_id: int)->str|Response:
     event = Event.query().filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
     stand = parcours.stands.filter_by(id=stand_id).first()
     
     if stand is None:
-        return redirect(url_for('parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
+        return redirect(url_for('parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
     first_or_last = parcours.end_stand==stand or parcours.start_stand==stand
 
     modif_form = Stand_modif_form(data={'name':stand.name,
                                         'lat':stand.lat,
                                         'lng':stand.lng,
-                                        'color':stand.color.hex_l,
+                                        'color':stand.color.get_hex_l(),
                                         'chrono':stand.chrono})
     
     if first_or_last:
@@ -407,14 +413,14 @@ def modify_stand(event_name:str, parcours_name:str, stand_id: int)->str|Response
     if modif_form.validate_on_submit():
         if stand.name == modif_form.name.data or not parcours.stands.filter_by(name=modif_form.name.data).first():
             # name
-            stand.name = modif_form.name.data
+            stand.name = assert400(modif_form.name.data)
             if stand.lat != modif_form.lat.data or stand.lng != modif_form.lng.data:
                 # lat
-                stand.lat = modif_form.lat.data
+                stand.lat = assert400(modif_form.lat.data)
                 # lng
-                stand.lng = modif_form.lng.data
+                stand.lng = assert400(modif_form.lng.data)
                 # elevation
-                ele = get_points_elevation([(modif_form.lat.data, modif_form.lng.data)])#type: ignore
+                ele = get_points_elevation([(assert400(modif_form.lat.data), assert400(modif_form.lng.data))])#type: ignore
                 if ele:
                     stand.elevation = ele[0]['elevation']
             # color
@@ -422,7 +428,7 @@ def modify_stand(event_name:str, parcours_name:str, stand_id: int)->str|Response
             # chrono
             stand.chrono = bool(modif_form.chrono.data)
             db.session.commit()
-            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
+            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
         else:
             modif_form.name.errors = list(modif_form.name.errors)+['vous utiliser déjà ce nom.']
 
@@ -433,31 +439,32 @@ def modify_stand(event_name:str, parcours_name:str, stand_id: int)->str|Response
 @admin_required
 def modify_trace(event_name:str, parcours_name:str, trace_id: int)->str|Response:
     event = Event.query().filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
     trace = parcours.traces.filter_by(id=trace_id).first()
 
     if trace is None:
-        return redirect(url_for('parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
+        return redirect(url_for('parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
     
     #! creation du formulaire de modification
-    modif_form = Etape_modif_form(data={'name':trace.name, 'path':str([[lat, lng] for lat, lng, _ in eval(trace.trace)])})
+    modif_form = Etape_modif_form(data={'name':trace.name, 'path':str([[lat, lng] for lat, lng, _ in cast(list[tuple[float, float, float]], literal_eval(trace.trace))])})
     if modif_form.validate_on_submit():
         if trace.name == modif_form.name.data or not parcours.traces.filter_by(name=modif_form.name.data).first():
             # name
-            trace.name = modif_form.name.data
+            trace.name = assert400(modif_form.name.data)
             try:
-                def float_int(value: str)->float|int:
+                def float_int(value: str|int|float)->float|int:
                     try:
                         str(value).index('.')
                         return float(value)
                     except (ValueError, TypeError):
                         return int(value)
 
-                new = [(float_int(lat),float_int(lng)) for lat,lng in list(eval(modif_form.path.data))]#type: ignore
+                path = cast(list[tuple[float, float]], literal_eval(assert400(modif_form.path.data)))
+                new = [(float_int(lat),float_int(lng)) for lat,lng in path]
                 elevation = get_points_elevation(new)
-                new_trace = str([[float_int(lat),float_int(lng), float_int(ele['elevation'])] for (lat,lng), ele in zip(list(eval(modif_form.path.data)), elevation)])#type: ignore
+                new_trace = str([[float_int(lat),float_int(lng), float_int(ele['elevation'])] for (lat,lng), ele in zip(path, elevation)])#type: ignore
             except Exception:
-                return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
+                return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
             else:
                 trace.trace = new_trace
             db.session.commit()
@@ -472,13 +479,13 @@ def modify_trace(event_name:str, parcours_name:str, trace_id: int)->str|Response
 @admin_required
 def new_stand(event_name:str, parcours_name:str, last_marker: int)->str|Response:
     event = Event.query().filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
 
     # trouve le marker qui est le debut de la traces
     turn_nb = 1
     stand : Stand = parcours.start_stand
-    for i in range(last_marker):
-        stand = stand.start_trace.filter_by(turn_nb=turn_nb).first().end
+    for _ in range(last_marker):
+        stand = assert400(stand.start_trace.filter_by(turn_nb=turn_nb).first()).end
         if stand == parcours.start_stand:
             turn_nb += 1
    #ic(stand, turn_nb)
@@ -491,19 +498,22 @@ def new_stand(event_name:str, parcours_name:str, last_marker: int)->str|Response
         modif_form.chrono.render_kw  = {'disabled':''}
 
     if modif_form.validate_on_submit():
-        elev = get_points_elevation([(modif_form.lat.data, modif_form.lng.data)])#type: ignore
+        ic(modif_form.lat.data, modif_form.lng.data, modif_form.color.data, modif_form.name.data)
+        elev = get_points_elevation([(assert400(modif_form.lat.data), assert400(modif_form.lng.data))])
         elevation = elev[0]['elevation'] if elev else None
-        new_stand = Stand(name=modif_form.name.data,
-                        lat=modif_form.lat.data,
-                        lng=modif_form.lng.data,
+        new_stand = Stand(name=assert400(modif_form.name.data),
+                        lat=assert400(modif_form.lat.data),
+                        lng=assert400(modif_form.lng.data),
                         elevation=elevation,
                         parcours_id=parcours.id,
-                        color=modif_form.color.data,
-                        chrono=modif_form.chrono.data)
+                        color=Color(assert400(modif_form.color.data)),
+                        chrono=modif_form.chrono.data,
+                        start_stand=None,
+                        end_stand=None)
         db.session.add(new_stand)
         db.session.commit()
         db.session.refresh(new_stand)
-
+        
         nb_name = Trace.query().filter(Trace.name.contains(f'{stand.name} - {new_stand.name}'[:36])).count()
         old_trace = Trace.query().filter_by(start_id = stand.id, turn_nb=turn_nb).first()
         name = f"{stand.name} - {new_stand.name}{f' ({nb_name})' if nb_name else ''}"
@@ -521,11 +531,11 @@ def new_stand(event_name:str, parcours_name:str, last_marker: int)->str|Response
             new_stand.end_stand = parcours.id
         else:
            #ic('pas dernier')
-            old_trace.start_id = new_stand.id
+            assert400(old_trace).start_id = new_stand.id
         db.session.commit()
 
-        return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-   #ic(modif_form.errors)
+        return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
+    ic(modif_form.errors)
     return render_modify_parcours(event, parcours, 'new', modif_form, last_marker=last_marker)
 
 @set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/new/<int:last_marker>/<int:stand_id>', methods=['POST', 'GET'])
@@ -533,19 +543,19 @@ def new_stand(event_name:str, parcours_name:str, last_marker: int)->str|Response
 @admin_required
 def new_step(event_name: str, parcours_name: str, last_marker: int, stand_id: int)-> str|Response:
     event = Event.query().filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
-    end_stand = parcours.stands.filter_by(id=stand_id).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
+    end_stand = assert404(parcours.stands.filter_by(id=stand_id).first())
 
-    
+    ic('step 1')
     # trouve le marker qui est le debut de la traces
     turn_nb = 1
     start_stand : Stand = parcours.start_stand
-    for i in range(last_marker):
-        start_stand = start_stand.start_trace.filter_by(turn_nb=turn_nb).first().end
+    for _ in range(last_marker):
+        start_stand = assert400(start_stand.start_trace.filter_by(turn_nb=turn_nb).first()).end
         if start_stand == parcours.start_stand:
             turn_nb += 1
    #ic(start_stand, turn_nb)
-
+    ic('step 2')
     nb_name = Trace.query().filter(Trace.name.contains(f'{start_stand.name} - {end_stand.name}'[:36])).count()
     old_trace = Trace.query().filter_by(start_id = start_stand.id, turn_nb=turn_nb).first()
     
@@ -564,14 +574,14 @@ def new_step(event_name: str, parcours_name: str, last_marker: int, stand_id: in
        #ic(parcours.traces.filter_by(turn_nb=turn_nb).all(), end_stand)
         if parcours.traces.filter_by(turn_nb=turn_nb).filter(or_(Trace.start_id==end_stand.id, Trace.end_id==end_stand.id)).count()!=0:
             flash('ce stand ne peut pas etre utilisé car il est deja utilise pour cette etape', 'warning')
-            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
+            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
 
     db.session.add(new_trace)
     if start_stand == parcours.end_stand:
         parcours.end_stand.end_stand = None
         end_stand.end_stand = parcours.id
     else:
-        old_trace.start_id = end_stand.id
+        assert400(old_trace).start_id = end_stand.id
 
     db.session.commit()
 
@@ -582,13 +592,13 @@ def new_step(event_name: str, parcours_name: str, last_marker: int, stand_id: in
 @admin_required
 def delete_trace(event_name:str, parcours_name:str, trace_id: int)->str|Response:
     event = Event.query().filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
     trace = parcours.traces.filter_by(id=trace_id).first()
    #ic(trace, trace.end, parcours.start_stand, trace.end == parcours.start_stand, bool(trace))
 
     if trace is None:
        #ic('trace == None')
-        return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
+        return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
 
     if trace.end == parcours.start_stand:
        #ic('fin de la trace -> debut du parcours')
@@ -599,21 +609,21 @@ def delete_trace(event_name:str, parcours_name:str, trace_id: int)->str|Response
             db.session.delete(trace)
             db.session.commit()
         else:
-            stands_last_turn = set()
+            stands_last_turn = set[int]()
             for loop_trace in parcours.traces.filter_by(turn_nb=trace.turn_nb).all():
-                stands_last_turn.add(loop_trace.end)
-                stands_last_turn.add(loop_trace.start)
-            stands_next_turn = set()
+                stands_last_turn.add(loop_trace.end.id)
+                stands_last_turn.add(loop_trace.start.id)
+            stands_next_turn = set[int]()
             for loop_trace in parcours.traces.filter_by(turn_nb=trace.turn_nb+1).all():
-                stands_next_turn.add(loop_trace.end)
-                stands_next_turn.add(loop_trace.start)
-            if any([stand in stands_last_turn and stand != parcours.start_stand for stand in stands_next_turn]):
+                stands_next_turn.add(loop_trace.end.id)
+                stands_next_turn.add(loop_trace.start.id)
+            if any([stand_id in stands_last_turn and stand_id != parcours.start_stand.id for stand_id in stands_next_turn]):
                 flash('cette etape n\'est pas supprimable car elle créerais une boucle hors du parcours', 'danger')
-                return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
+                return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
             
            #ic('pas la derniere du parcours')
            #ic(trace.get_next_trace())
-            next = trace.get_next_trace()
+            next = assert400(trace.get_next_trace())
             next.start_id = trace.start_id
            #ic(next, trace.start_id)
             db.session.commit()
@@ -632,7 +642,7 @@ def delete_trace(event_name:str, parcours_name:str, trace_id: int)->str|Response
             db.session.delete(trace.end)
         db.session.delete(trace)
         db.session.commit()
-    elif trace.get_next_trace().end == parcours.start_stand:
+    elif assert400(trace.get_next_trace()).end.id == parcours.start_stand.id:
        #ic('allée d\'un allée retour')
         next_trace = trace.get_next_trace()
        #ic(next_trace)
@@ -648,7 +658,7 @@ def delete_trace(event_name:str, parcours_name:str, trace_id: int)->str|Response
         db.session.commit()
     else:
        #ic('allée normale')
-        trace.get_next_trace().start_id = trace.start_id
+        assert400(trace.get_next_trace()).start_id = trace.start_id
 
        #ic(trace.end.start_trace.filter_by(turn_nb=trace.turn_nb+1).all(), trace.end.start_trace.filter_by(turn_nb=trace.turn_nb).all())
         if trace.end.start_trace.filter_by(turn_nb=trace.turn_nb).count() == 0: # un seul : la trace à supprimer
@@ -658,11 +668,12 @@ def delete_trace(event_name:str, parcours_name:str, trace_id: int)->str|Response
         db.session.delete(trace)
         db.session.commit()
         
-    return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
+    return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
 
-def render_modify_parcours(event:Event, parcours: Parcours, modif_form_type:Literal['marker', 'trace', 'new']|None=None, modif_form:FlaskForm|None=None, **kwargs: Any)->str|Response:
+def render_modify_parcours(event:Event, parcours: Parcours, modif_form_type:Literal['marker', 'trace', 'new']|None=None, modif_form:FlaskForm|None=None, **kwargs: Any)->str|Response:  # pyright: ignore[reportExplicitAny, reportAny]
     user = current_user
-    already_use = bool(parcours.editions.count())
+    modif = not bool(parcours.editions.count()) or request.args.get('force_modif') == 'true'
+    ic(modif, request.args)
     if not (modif_form_type and modif_form):
         modif_form_type = None
         modif_form=None
@@ -675,31 +686,33 @@ def render_modify_parcours(event:Event, parcours: Parcours, modif_form_type:Lite
     if name_form.validate_on_submit() and not modif_form:
         if name_form.name.data == parcours.name or not event.parcours.filter_by(name=name_form.name.data).first():
             # le nom peut etre utilisé
-            parcours.name=name_form.name.data
-            parcours.description=name_form.description.data
+            parcours.name=assert400(name_form.name.data)
+            parcours.description=assert400(name_form.description.data)
             db.session.commit()
             flash('name saved', 'success')
-            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
+            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name, force_modif=request.args.get('force_modif', None)))
         else:
             name_form.name.errors = list(name_form.name.errors)+['vous utiliser deja ce nom.']
 
     map_data = create_map_and_alt_graph(parcours,
-                                        modif=not already_use, 
-                                        current_stand_id=kwargs['stand'].id if 'stand' in kwargs else None, 
-                                        current_trace_id=kwargs['trace'].id if 'trace' in kwargs else None)
+                                        modif=modif,
+                                        current_stand_id=cast(int, kwargs['stand'].id) if 'stand' in kwargs else None, 
+                                        current_trace_id=cast(str, kwargs['trace'].id) if 'trace' in kwargs else None)
     
     element_name, last_path_name, next_path_name, markers_name, program_list, map, graph = map_data
 
+    from branca.element import Figure
     #? render the map
-    map.get_root().width = '100%'
-    map.get_root().height = '450px'
-    map.get_root().render()
+    root = cast(Figure, map.get_root())
+    root.width = '100%'
+    root.height = '450px'
+    root.render()  # pyright: ignore[reportUnknownMemberType]
 
-    header= map.get_root().header.render()
-    body= map.get_root().html.render()
-    script= map.get_root().script.render()
+    header= root.header.render()  # pyright: ignore[reportUnknownMemberType]
+    body= root.html.render()  # pyright: ignore[reportUnknownMemberType]
+    script= root.script.render()  # pyright: ignore[reportUnknownMemberType]
 
     folium_map={'header':header, 'body':body, 'script':script}
     return render_template('modify_parcours.html', user_data=user, event_data=event, parcours_data=parcours, name_form=name_form, folium_map=folium_map,
                            map_name=map.get_name(), element_name=element_name, path_names={'last':last_path_name, 'next':next_path_name} if last_path_name else markers_name,
-                           program_list=program_list, modif_form=modif_form, modif_form_type=modif_form_type, graph=graph, event_modif=True, **kwargs)
+                           program_list=program_list, modif_form=modif_form, modif_form_type=modif_form_type, graph=graph, event_modif=True, modif=modif, **kwargs)

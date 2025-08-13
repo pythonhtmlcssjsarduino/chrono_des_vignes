@@ -18,7 +18,8 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
-from flask import render_template, request, redirect, send_from_directory, abort
+from pathlib import Path
+from flask import make_response, render_template, request, redirect, send_from_directory, abort
 from chrono_des_vignes import app, LANGAGES, db, set_route
 from flask_login import current_user
 from chrono_des_vignes.models import Edition, Inscription, Event
@@ -61,14 +62,19 @@ def change_lang(lang:str)->Response:
     next = '/'.join(next)
     return redirect(next)
 
+DOC_DIR = Path(app.root_path) / 'static/doc'
+
 @app.route('/doc/<path:path>')
 @app.route('/doc/<lang>/<path:path>')
 @app.route('/doc/')
-def doc(path: str='', lang: str='')-> str:
-    if not os.path.exists(os.path.join(app.root_path,cast(str, app.template_folder), 'doc/site/index.html' if path == '' else f'doc/site/{path}index.html')):
-        return render_template('doc/site/404.html')
+def doc(path: str='', lang: str=''):
+    if path == 'style.css':
+        return send_from_directory(DOC_DIR, 'style.css')
     lang=lang+"/" if lang else ""
-    return render_template(f'doc/site/{lang}index.html' if path == '' else f'doc/site/{lang}{path}index.html')
+    file = Path(f'{lang}index.html' if path == '' else f'{lang}{path}index.html')
+    if not (DOC_DIR/file).exists():
+        return make_response(send_from_directory(DOC_DIR, '404.html'), 404)
+    return send_from_directory(DOC_DIR.as_posix(), file.as_posix(), download_name=file.name)
 
 @app.route('/doc/assets/<path:path>')
 def assets_doc_files(path:str)->Response:
@@ -79,6 +85,4 @@ def search_doc_files(path: str)->Response:
     return doc_file('search', path)
 
 def doc_file(dir:str, path:str)->Response:
-    if not os.path.exists(os.path.join(app.root_path,str(app.template_folder), f'doc/site/{dir}/{path}')): 
-        return abort(404)
-    return send_from_directory(str(app.template_folder), f'doc/site/{dir}/{path}', download_name=path.split('/')[-1])
+    return send_from_directory(DOC_DIR.as_posix(), f'{dir}/{path}', download_name=Path(path).name)

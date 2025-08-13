@@ -23,7 +23,7 @@
 {% block content %}
 <form action="" method="post" id="form">
   {{ form.hidden_tag() }}
-  {{ form_field(form.lang_data, div_class='d-none') }}
+  {{ form_field(form.lang_data, input_id='data', div_class='d-none') }}
   {{ submit(form) }}
 </form>
 <style>
@@ -57,9 +57,10 @@ $(document).keydown(function(e) {
     <tbody>
       <script>
         var data = {{langs|safe}} 
-        var input = document.getElementById("form")['data']
+        var input = document.getElementById("data")
         input.value = JSON.stringify(data)
         function field_change(id, lang_name) {
+          console.log(id, lang_name)
           var val = document.getElementById(`${id}.${lang_name}`).value
           data[id][lang_name] = val
           input.value = JSON.stringify(data)

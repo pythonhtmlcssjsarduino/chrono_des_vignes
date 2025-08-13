@@ -10,11 +10,11 @@ Chrono des Vignes is a timing system for sports events. It allows event organize
 ## Getting Started
 To get started with Chrono des Vignes, please follow these steps:
 
-1. Rebuild the virtual environment from the `requirements.txt` file
-2. Open a terminal with the virtual environment
+1. Rebuild the virtual environment with uv
 3. Launch the server with the following command:
     ```shell
-    $env:FLASK_DEBUG = 1;$env:FLASK_APP = "chrono_des_vignes";flask run --extra-files flask-app/templates/:flask_app/translations/```
+    uv run invoke serve
+    ```
 
 ## Live Demo
 Experience Chrono des Vignes in action by visiting our [Deployed version](https://chronodesvignes.eu.pythonanywhere.com/).

@@ -19,62 +19,65 @@
 '''
 
 from flask_wtf import FlaskForm
+from wtforms.fields import TextAreaField
 from chrono_des_vignes.models import User
 from wtforms import StringField, PasswordField, SubmitField, EmailField, DateField
 from flask_wtf.file import FileField, FileAllowed
 from chrono_des_vignes.custom_validators import DataRequired, EqualTo, DbLength, Email
 from chrono_des_vignes.custom_field import MultiCheckboxFieldWithDescription
 from flask_babel import lazy_gettext as _
-from wtforms.validators import InputRequired, Optional
+from wtforms.validators import Optional
 
 class Login_form(FlaskForm):
-    username = StringField(_('form.username'), validators=[
+    username: StringField = StringField(_('form.username'), validators=[
                            DataRequired(), DbLength(min=2, table=User, column='username')])
-    password = PasswordField(_('form.pwd'), validators=[DataRequired()])
-    submit_btn = SubmitField(_('form.connect'))
+    password: PasswordField = PasswordField(_('form.pwd'), validators=[DataRequired()])
+    submit_btn: SubmitField = SubmitField(_('form.connect'))
 
 class Signup_form(FlaskForm):
-    name = StringField(_('form.name'), validators=[DataRequired(), DbLength(table=User, column='name')])
-    lastname = StringField(_('form.lastname'), validators=[DataRequired(), DbLength(table=User, column='lastname')])
-    username = StringField(_('form.username'), validators=[
+    name: StringField = StringField(_('form.name'), validators=[DataRequired(), DbLength(table=User, column='name')])
+    lastname: StringField = StringField(_('form.lastname'), validators=[DataRequired(), DbLength(table=User, column='lastname')])
+    username: StringField = StringField(_('form.username'), validators=[
                            DataRequired(), DbLength(min=2, table=User, column='username')])
-    email = EmailField(_('form.email'), validators=[Optional(), Email()])
-    phone = StringField(_('form.tel'))
-    datenaiss = DateField(_('form.birth'), validators=[DataRequired()])
-    password = PasswordField(_('form.pwd'), validators=[DataRequired(), DbLength(table=User, column='password')])
-    repeatpassword = PasswordField(_('form.repetepwd'), validators=[EqualTo('password')])
-    submit_btn = SubmitField(_('form.createaccount'))
+    email: EmailField = EmailField(_('form.email'), validators=[Optional(), Email()])
+    phone: StringField = StringField(_('form.tel'))
+    datenaiss: DateField = DateField(_('form.birth'), validators=[DataRequired()])
+    password: PasswordField = PasswordField(_('form.pwd'), validators=[DataRequired(), DbLength(table=User, column='password')])
+    repeatpassword: PasswordField = PasswordField(_('form.repetepwd'), validators=[EqualTo('password')])
+    submit_btn: SubmitField = SubmitField(_('form.createaccount'))
 
-class Inscription_connected_form(FlaskForm):
-    parcours = MultiCheckboxFieldWithDescription(_('form.choosedparcours'), validators=[DataRequired()])
+class InscriptionConnectedForm(FlaskForm):
+    parcours: MultiCheckboxFieldWithDescription = MultiCheckboxFieldWithDescription(_('form.choosedparcours'), validators=[DataRequired()])
+    comment: TextAreaField = TextAreaField(_('form.comment'), [Optional()], render_kw={'style':'height:200px'})
 
-    submit_btn = SubmitField(_('form.register'))
+    submit_btn: SubmitField = SubmitField(_('form.register'))
 
-class Inscription_form(FlaskForm):
-    name = StringField(_('form.name'), validators=[DataRequired(), DbLength(table=User, column='name')])
-    lastname = StringField(_('form.lastname'), validators=[DataRequired(), DbLength(table=User, column='lastname')])
-    email = EmailField(_('form.email'), validators=[Optional(), Email()])
-    phone = StringField(_('form.tel'))
-    datenaiss = DateField(_('form.birth'), validators=[DataRequired()])
+class InscriptionForm(FlaskForm):
+    name: StringField = StringField(_('form.name'), validators=[DataRequired(), DbLength(table=User, column='name')])
+    lastname: StringField = StringField(_('form.lastname'), validators=[DataRequired(), DbLength(table=User, column='lastname')])
+    email: EmailField = EmailField(_('form.email'), validators=[Optional(), Email()])
+    phone: StringField = StringField(_('form.tel'))
+    datenaiss: DateField = DateField(_('form.birth'), validators=[DataRequired()])
 
-    parcours = MultiCheckboxFieldWithDescription(_('form.choosedparcours'), validators=[DataRequired()])
+    parcours: MultiCheckboxFieldWithDescription = MultiCheckboxFieldWithDescription(_('form.choosedparcours'), validators=[DataRequired()])
+    comment: TextAreaField = TextAreaField(_('form.comment'), [Optional()], render_kw={'style':'height:200px'})
 
-    password = PasswordField(_('form.pwdforconnection'), validators=[DataRequired(), DbLength(table=User, column='password')])
-    repeatpassword = PasswordField(_('form.repetepwd'), validators=[EqualTo('password')])
-    submit_btn = SubmitField(_('form.register'))
+    password: PasswordField = PasswordField(_('form.pwdforconnection'), validators=[DataRequired(), DbLength(table=User, column='password')])
+    repeatpassword: PasswordField = PasswordField(_('form.repetepwd'), validators=[EqualTo('password')])
+    submit_btn: SubmitField = SubmitField(_('form.register'))
 
 class ModifyForm(FlaskForm):
-    name = StringField(_('form.name'), validators=[DataRequired(), DbLength(table=User, column='name')])
-    lastname = StringField(_('form.lastname'), validators=[DataRequired(), DbLength(table=User, column='lastname')])
-    username = StringField(_('form.username'), validators=[DataRequired(), DbLength(min=2, table=User, column='username')])
-    email = EmailField(_('form.email'), validators=[Optional(), Email()])
-    phone = StringField(_('form.tel'))
-    datenaiss = DateField(_('form.birth'), validators=[DataRequired()])
-    profil_pic = FileField(_('form.profilpic'), validators=[FileAllowed(['jpg', 'png'])])
-    submit_btn = SubmitField(_('form.modifyaccount'))
+    name: StringField = StringField(_('form.name'), validators=[DataRequired(), DbLength(table=User, column='name')])
+    lastname: StringField = StringField(_('form.lastname'), validators=[DataRequired(), DbLength(table=User, column='lastname')])
+    username: StringField = StringField(_('form.username'), validators=[DataRequired(), DbLength(min=2, table=User, column='username')])
+    email: EmailField = EmailField(_('form.email'), validators=[Optional(), Email()])
+    phone: StringField = StringField(_('form.tel'))
+    datenaiss: DateField = DateField(_('form.birth'), validators=[DataRequired()])
+    profil_pic: FileField = FileField(_('form.profilpic'), validators=[FileAllowed(['jpg', 'png'])])
+    submit_btn: SubmitField = SubmitField(_('form.modifyaccount'))
 
 class ModifyPwdForm(FlaskForm):
-    old_pwd = PasswordField(_('form.oldpwd'), validators=[DataRequired()])
-    password = PasswordField(_('form.newpwd'), validators=[DataRequired(), DbLength(table=User, column='password')])
-    repeatpassword = PasswordField(_('form.repetenewpwd'), validators=[EqualTo('password')])
-    submit_btn = SubmitField(_('form.modifypassword'))
+    old_pwd: PasswordField = PasswordField(_('form.oldpwd'), validators=[DataRequired()])
+    password: PasswordField = PasswordField(_('form.newpwd'), validators=[DataRequired(), DbLength(table=User, column='password')])
+    repeatpassword: PasswordField = PasswordField(_('form.repetenewpwd'), validators=[EqualTo('password')])
+    submit_btn: SubmitField = SubmitField(_('form.modifypassword'))
