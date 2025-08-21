@@ -7,13 +7,42 @@ from re import compile, Pattern
 from fnmatch import translate
 import os
 
+frontend_path = Path.cwd()/'front-end'
+
+@task
+def check_node_modules(ctx: Context):
+    if not (frontend_path/'node_modules').exists():
+        with ctx.cd(frontend_path):
+            ctx.run('npm install')
+        ic('node_modules installed')
+    else:
+        ic('node_modules already installed')
+
+@task(pre=[check_node_modules])  # pyright: ignore[reportUntypedFunctionDecorator]
+def build_ts(ctx: Context):
+    ts_files = list((frontend_path/'ts').glob('*.ts'))
+    if len(ts_files) == 0:
+        ic('no ts files found')
+        return
+    with ctx.cd(frontend_path):
+        ctx.run(f'npx esbuild {" ".join(map(lambda x:x.as_posix(), ts_files))} --bundle --minify --outdir=../chrono_des_vignes/static/js --splitting --loader:.css=css --loader:.png=file --format=esm')
+
+@task(pre=[check_node_modules])  # pyright: ignore[reportUntypedFunctionDecorator]
+def watch_ts(ctx: Context):
+    ts_files = list((frontend_path/'ts').glob('*.ts'))
+    if len(ts_files) == 0:
+        ic('no ts files found')
+        return
+    with ctx.cd(frontend_path):
+        ctx.run(f'npx esbuild {" ".join(map(lambda x:x.as_posix(), ts_files))} --bundle --minify --outdir=../chrono_des_vignes/static/js --splitting --loader:.css=css --loader:.png=file --format=esm --watch')
+
 @task
 def serve(ctx: Context):
     ctx.run('flask --app chrono_des_vignes run --debug')
 
 @task
 def build_doc(ctx: Context):
-    config_path = Path.cwd()/'front-end/doc'/'mkdocs.yml'
+    config_path = Path.cwd()/'front-end'/'mkdocs.yml'
     build_path = Path.cwd()/'chrono_des_vignes'/'static'/'doc'
     ctx.run(f"mkdocs build --config-file {config_path} --site-dir {build_path}")
 

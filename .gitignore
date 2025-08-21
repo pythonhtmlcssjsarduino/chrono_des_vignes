@@ -3,6 +3,7 @@ sql-dumps
 .vscode
 release.zip
 tests/
+node_modules
 
 
 # Byte-compiled / optimized / DLL files

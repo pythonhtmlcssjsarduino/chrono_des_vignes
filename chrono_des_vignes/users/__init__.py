@@ -65,9 +65,9 @@ def signup()-> str|Response:
     form = Signup_form()
     if form.validate_on_submit():
         hash_pwd= bcrypt.generate_password_hash(assert400(form.password.data)).decode('utf-8')# type: ignore[arg-type]
-        user = User(name=assert400(form.name.data),
-                    lastname=assert400(form.lastname.data),
-                    username=assert400(form.username.data),
+        user = User(name=assert400(form.name.data).strip(),
+                    lastname=assert400(form.lastname.data).strip(),
+                    username=assert400(form.username.data).strip(),
                     email=form.email.data if form.email.data else None,
                     phone=form.phone.data if form.phone.data else None,
                     datenaiss= datetime.combine(assert400(form.datenaiss.data), time.min),

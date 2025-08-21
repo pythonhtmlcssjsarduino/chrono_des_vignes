@@ -27,8 +27,6 @@ from sqlalchemy import and_
 from datetime import datetime
 from chrono_des_vignes.admin.form import NewEventForm
 from werkzeug.wrappers.response import Response
-from typing import cast
-import os
 
 @set_route(app, '/')
 def home()->str:

@@ -1,0 +1,12 @@
+{
+  "name": "flask-lit-frontend",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "esbuild": "^0.25.9",
+    "leaflet": "^1.9.4",
+    "lit": "^3.1.0",
+    "typescript": "^5.4.0",
+    "leaflet-editable": "^0.6.1"
+  }
+}
