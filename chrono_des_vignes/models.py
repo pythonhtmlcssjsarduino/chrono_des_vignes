@@ -260,7 +260,7 @@ class Trace(Model):
         sterilised_trace:list[tuple[float, float, float|None]] = []
         for point in trace:
             sterilised_trace.append((point[0], point[1], point[2]))
-        self.trace = str(sterilised_trace)#type:ignore
+        self.trace = str(sterilised_trace)
         
     def has_alt(self)-> bool:
         return all((bool(point.alt) for point in self))

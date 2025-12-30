@@ -19,9 +19,11 @@
 '''
 
 from ast import literal_eval
-from flask import Blueprint, flash, redirect, render_template, request, abort
+from datetime import datetime
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, abort
 from icecream import ic
 from chrono_des_vignes import admin_required, db, set_route, lang_url_for as url_for
+from chrono_des_vignes.api import ApiBlueprint
 from .form import  Parcours_name_form, Etape_modif_form, Stand_modif_form, New_parcours_form
 from flask_login import login_required, current_user
 from chrono_des_vignes.models import Event, Stand, Trace, Parcours
@@ -35,6 +37,86 @@ from flask_wtf import FlaskForm
 from typing import Any, Literal, TypedDict, cast
 
 parcours_bp = Blueprint('parcours', __name__, template_folder='templates')
+#region api
+api = ApiBlueprint.admin('parcours')
+
+class StandData(TypedDict):
+    id:int
+    name:str
+    lat:float
+    lng:float
+    ele:float|None
+    color:str
+    chrono:bool
+
+class SegmentData(TypedDict):
+    id:int
+    start:int
+    to:int
+    trace:list[tuple[float, float, float|None]]
+    index:int
+
+class ParcoursData(TypedDict):
+    id:int
+    name:str
+    description:str
+    creation_date:datetime
+    stands:list[StandData]
+    segments:list[SegmentData]
+    modif:bool
+    modif_allowed:bool
+
+@api.route('/get_parcours/<int:event_id>/<int:parcours_id>')
+def get_parcours(event_id:int, parcours_id:int):
+    event = Event.query().filter_by(id=event_id).first_or_404()
+    parcours= assert404(event.parcours.filter_by(id=parcours_id).first())
+
+    data:ParcoursData = {'id':parcours.id,
+                            'name':parcours.name,
+                            'description':parcours.description,
+                            'creation_date':parcours.creation_date,
+                            'stands':[],
+                            'segments':[],
+                            'modif':True, # todo : check from the date
+                            'modif_allowed':True}
+
+    segment_index = 0
+    stands_ids=set[int]()
+    for etape in parcours:
+        if isinstance(etape, Stand):
+            if etape.id in stands_ids:
+                continue
+            stands_ids.add(etape.id)
+            data['stands'].append({
+                'id':etape.id,
+                'name':etape.name,
+                'lat':etape.lat,
+                'lng':etape.lng,
+                'ele':etape.elevation,
+                'color':etape.color.get_hex_l(),
+                'chrono':etape.chrono
+            })
+        else:
+            data['segments'].append({
+                'id':etape.id,
+                'start':etape.start.id,
+                'to':etape.end.id,
+                'trace':[(lat, lng, alt) for lat, lng, alt in literal_eval(etape.trace)],  # pyright: ignore[reportAny]
+                'index':segment_index
+            })
+            segment_index += 1
+
+    return jsonify(data)
+
+@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/dev')
+@login_required
+@admin_required
+def dev_parcours_page(event_name: str, parcours_name: str)->str|Response:
+    event = Event.query().filter_by(name=event_name).first_or_404()
+    parcours= assert404(event.parcours.filter_by(name=parcours_name).first())
+    return render_template('parcours_dev.html',user_data=current_user, event_data=event, parcours_data=parcours, event_modif=True,)
+
+#endregion api
 
 @set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/delete')
 @login_required

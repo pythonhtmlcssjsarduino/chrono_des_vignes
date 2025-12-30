@@ -30,11 +30,11 @@ from urllib.parse import quote
 from flask.typing import ResponseReturnValue
 from flask_babel import Babel, _, gettext
 from flask_bcrypt import Bcrypt
-from flask_login import LoginManager, current_user
+from flask_login import LoginManager, current_user, login_required
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
-from icecream import ic, install
+from icecream import install
 from werkzeug import exceptions
 from werkzeug.wrappers.response import Response
 from flask import (
@@ -73,7 +73,10 @@ app.config["BABEL_TRANSLATION_DIRECTORIES"] = f"{app.root_path}/translations"
 app.jinja_env.add_extension("jinja2.ext.loopcontrols")
 app.url_map.default_subdomain = ""
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_POOL_RECYCLE"] = 280
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_recycle": 280,   # refresh connections every ~280s
+    "pool_pre_ping": True, # check connection before using it
+}
 
 DEFAULT_PROFIL_PIC:Final[str] = "icone.png"
 LANGAGES:Final[tuple[str,...]] = ("de", "fr", "en")
@@ -113,8 +116,7 @@ socketio = SocketIO(app)
 
 bcrypt = Bcrypt(app)
 
-login_manager = LoginManager()
-login_manager.init_app(app)
+login_manager = LoginManager(app)
 login_manager.login_view = "users.login"
 login_manager.login_message_category = "info"
 
@@ -122,7 +124,7 @@ login_manager.login_message_category = "info"
 mail_host = cast(str, json.loads(cast(str, os.getenv("mail_host"))))
 from_addr = cast(str, os.getenv("from_addr"))
 mail_token = cast(str, os.getenv("mail_token"))
-to_addrs = cast(str, json.loads(cast(str, os.getenv("to_addrs"))))
+to_addrs = cast(list[str], json.loads(cast(str, os.getenv("to_addrs"))))
 # ic(mail_host, from_addr, mail_token, to_addrs)
 
 
@@ -179,7 +181,7 @@ post:   {post_data}
 
 smtp_handeler = SMTPHandler(
     mailhost=mail_host,
-    fromaddr=to_addrs,
+    fromaddr=to_addrs[0],
     toaddrs=to_addrs,
     subject="server error",
     credentials=(from_addr, mail_token),
@@ -232,10 +234,10 @@ def admin_required(func: Callable[param, ret]) -> Callable[param, ret | Response
     """
     Modified login_required decorator to restrict access to admin group.
     """
-
+    @login_required
     @wraps(func)
     def decorated_view(*args: param.args, **kwargs: param.kwargs) -> ret | Response:
-        # ic(current_user, current_user.admin, args, kwargs)
+        
         if not current_user.admin:
             flash(_("flash.error.mustadmin"), "danger")
             return redirect(url_for("home"))
@@ -320,19 +322,22 @@ def http_error(error: exceptions.HTTPException) -> Response:
 
 # defini les pages du site web
 from chrono_des_vignes.users import users  # noqa: E402
-
 app.register_blueprint(users)
+
 from chrono_des_vignes.admin import admin  # noqa: E402
-
 app.register_blueprint(admin)
-from chrono_des_vignes.view import view  # noqa: E402
 
+from chrono_des_vignes.view import view  # noqa: E402
 app.register_blueprint(view)
+
 if app.debug:
     from chrono_des_vignes.dev import dev
-
     app.register_blueprint(dev)
-from chrono_des_vignes.livetrack import livetrack  # noqa: E402
 
+from chrono_des_vignes.livetrack import livetrack  # noqa: E402
 app.register_blueprint(livetrack)
+
+from .api import api_blueprint  # noqa: E402
+app.register_blueprint(api_blueprint)
+
 from chrono_des_vignes import routes  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]

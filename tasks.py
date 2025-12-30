@@ -1,3 +1,4 @@
+from shutil import rmtree
 from zipfile import ZIP_DEFLATED, ZipFile
 from icecream import ic
 from invoke import task
@@ -7,7 +8,22 @@ from re import compile, Pattern
 from fnmatch import translate
 import os
 
+from invoke.exceptions import UnexpectedExit
+from invoke.runners import Promise
+
 frontend_path = Path.cwd()/'front-end'
+loaders = '--loader:.css=css --loader:.png=file --loader:.svg=file'
+
+@task
+def dev(ctx: Context):
+    try:
+        ts:Promise = ctx.run('inv watch-ts', asynchronous=True, hide=True)  # pyright: ignore[reportAssignmentType]
+        serve:Promise = ctx.run('inv serve', asynchronous=True, hide=True)  # pyright: ignore[reportAssignmentType]
+        ic('serving and watching...')
+        ts.join()
+        serve.join()
+    except UnexpectedExit:
+        ic('exiting...')
 
 @task
 def check_node_modules(ctx: Context):
@@ -18,23 +34,29 @@ def check_node_modules(ctx: Context):
     else:
         ic('node_modules already installed')
 
-@task(pre=[check_node_modules])  # pyright: ignore[reportUntypedFunctionDecorator]
-def build_ts(ctx: Context):
-    ts_files = list((frontend_path/'ts').glob('*.ts'))
-    if len(ts_files) == 0:
-        ic('no ts files found')
-        return
-    with ctx.cd(frontend_path):
-        ctx.run(f'npx esbuild {" ".join(map(lambda x:x.as_posix(), ts_files))} --bundle --minify --outdir=../chrono_des_vignes/static/js --splitting --loader:.css=css --loader:.png=file --format=esm')
+@task
+def clean_js(ctx: Context):
+    rmtree(Path.cwd()/'chrono_des_vignes'/'static'/'js', ignore_errors=True)
 
-@task(pre=[check_node_modules])  # pyright: ignore[reportUntypedFunctionDecorator]
-def watch_ts(ctx: Context):
+@task(pre=[check_node_modules, clean_js])  # pyright: ignore[reportUntypedFunctionDecorator]
+def build_ts(ctx: Context, dev:bool=False):
     ts_files = list((frontend_path/'ts').glob('*.ts'))
     if len(ts_files) == 0:
         ic('no ts files found')
         return
     with ctx.cd(frontend_path):
-        ctx.run(f'npx esbuild {" ".join(map(lambda x:x.as_posix(), ts_files))} --bundle --minify --outdir=../chrono_des_vignes/static/js --splitting --loader:.css=css --loader:.png=file --format=esm --watch')
+        ctx.run('node esbuild.config.mjs')
+        #ctx.run(f'npx esbuild {" ".join(map(lambda x:x.as_posix(), ts_files))} --bundle {'--sourcemap'if dev else '--minify'} --outdir=../chrono_des_vignes/static/js --splitting {loaders} --public-path=/static/js --format=esm')
+
+@task(pre=[check_node_modules, clean_js])  # pyright: ignore[reportUntypedFunctionDecorator]
+def watch_ts(ctx: Context, split:bool=False):
+    ts_files = list((frontend_path/'ts').glob('*.ts'))
+    if len(ts_files) == 0:
+        ic('no ts files found')
+        return
+    with ctx.cd(frontend_path):
+        ctx.run('node esbuild.config.mjs --watch')
+        #ctx.run(f'npx esbuild {" ".join(map(lambda x:x.as_posix(), ts_files))} --bundle --sourcemap --outdir=../chrono_des_vignes/static/js {'--splitting'if split else ''} {loaders} --public-path=/static/js --format=esm --watch')
 
 @task
 def serve(ctx: Context):
@@ -50,7 +72,7 @@ def build_doc(ctx: Context):
 def requirements(ctx: Context):
     ctx.run("uv export --no-hashes --format requirements.txt --no-dev > requirements.txt")
 
-@task(pre=[build_doc, requirements])  # pyright: ignore[reportUntypedFunctionDecorator]
+@task(pre=[build_doc, requirements, build_ts])  # pyright: ignore[reportUntypedFunctionDecorator]
 def release(ctx: Context, output:str='release.zip'):
     output_file = Path(output).absolute()
     base_dir = Path.cwd()/'chrono_des_vignes'
