@@ -1,10 +1,10 @@
 site_name: Chrono Des Vignes Documentation
-site_url: https://chronodesvignes.eu.pythonanywhere.com/doc/
-
+site_url: <<site_url>>/doc/
+docs_dir: <<docs_dir>>
 
 repo_url: https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes_2.0
 nav:
-  - retour au site: https://chronodesvignes.eu.pythonanywhere.com
+  - retour au site: <<site_url>>
   - Home: index.md
   - contact: contact.md
   - about: about.md
@@ -26,7 +26,11 @@ not_in_nav:
 extra_css:
   - style.css
 
+extra:
+  site_url: <<site_url>>
+
 plugins:
+  - macros
   - search:
   - i18n:
       docs_structure: suffix

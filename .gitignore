@@ -4,6 +4,8 @@ sql-dumps
 release.zip
 tests/
 node_modules
+static/doc
+static/js
 
 
 # Byte-compiled / optimized / DLL files

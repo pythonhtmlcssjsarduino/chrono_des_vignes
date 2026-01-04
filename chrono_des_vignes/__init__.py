@@ -1,22 +1,22 @@
-'''
+"""
 # Chrono Des Vignes
 # a timing system for sports events
-# 
-# Copyright © 2024-2025 Romain Maurer
+#
+# Copyright © 2025-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
-# 
+#
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software Foundation,
 # either version 3 of the License, or (at your option) any later version.
-# 
+#
 # Chrono Des Vignes is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
 # without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
 # You should have received a copy of the GNU General Public License along with Foobar.
 # If not, see <https://www.gnu.org/licenses/>.
-# 
+#
 # You may contact me at chrono-des-vignes@ikmail.com
-'''
+"""
 
 import json
 import locale
@@ -25,7 +25,17 @@ import os
 from datetime import datetime
 from functools import wraps
 from logging.handlers import SMTPHandler
-from typing import Any, Callable, Generic, ParamSpec, Self, TypeVar, cast, Final, override
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    ParamSpec,
+    Self,
+    TypeVar,
+    cast,
+    Final,
+    override,
+)
 from urllib.parse import quote
 from flask.typing import ResponseReturnValue
 from flask_babel import Babel, _, gettext
@@ -51,6 +61,7 @@ from flask import (
 )
 from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass, Query
 from dotenv import load_dotenv
+
 install()
 load_dotenv()
 # met la langue en francais pour le formatage des dates
@@ -60,7 +71,7 @@ locale.setlocale(locale.LC_TIME, "")
 app = Flask(__name__)
 app.subdomain_matching = True
 app.config["SERVER_NAME"] = os.getenv("SERVER_NAME")
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")  #! change that for deployment
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
 
 password = quote(cast(str, os.environ.get("db_password")))
 username = os.environ.get("db_user")
@@ -74,17 +85,18 @@ app.jinja_env.add_extension("jinja2.ext.loopcontrols")
 app.url_map.default_subdomain = ""
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_recycle": 280,   # refresh connections every ~280s
-    "pool_pre_ping": True, # check connection before using it
+    "pool_recycle": 280,  # refresh connections every ~280s
+    "pool_pre_ping": True,  # check connection before using it
 }
 
-DEFAULT_PROFIL_PIC:Final[str] = "icone.png"
-LANGAGES:Final[tuple[str,...]] = ("de", "fr", "en")
+DEFAULT_PROFIL_PIC: Final[str] = "icone.png"
+LANGAGES: Final[tuple[str, ...]] = ("de", "fr", "en")
 if app.debug:
     LANGAGES += ("ids", "pseudo")  # pyright: ignore[reportConstantRedefinition, reportGeneralTypeIssues]
-PICTURE_SIZE:Final[tuple[int, int]] = (200, 200)
+PICTURE_SIZE: Final[tuple[int, int]] = (200, 200)
 
 T = TypeVar("T")
+
 
 class BaseQuery(Query[T], Generic[T]):
     def first_or_404(self, description: str | None = None) -> T:
@@ -92,21 +104,25 @@ class BaseQuery(Query[T], Generic[T]):
         if result is None:
             abort(404, description)
         return result
-    
-    def get_or_404(self, ident:Any|tuple[Any, ...], description: str | None = None) -> T:  # pyright: ignore[reportExplicitAny]
+
+    def get_or_404(
+        self, ident: Any | tuple[Any, ...], description: str | None = None
+    ) -> T:
         result = self.get(ident)
         if result is None:
             abort(404, description)
         return result
-    
+
     @override
-    def get(self, ident: Any|tuple[Any, ...]) -> T|None:  # pyright: ignore[reportExplicitAny]
+    def get(self, ident: Any | tuple[Any, ...]) -> T | None:
         return super().get(ident)
+
 
 class Base(DeclarativeBase, MappedAsDataclass):  # pyright: ignore[reportUnsafeMultipleInheritance]
     @classmethod
-    def query(cls) :
+    def query(cls):
         return cast(BaseQuery[Self], db.session.query(cls))
+
 
 db = SQLAlchemy(app, model_class=Base, session_options={"query_cls": BaseQuery})
 
@@ -192,22 +208,23 @@ smtp_handeler.setLevel(logging.WARNING)
 app.logger.addHandler(smtp_handeler)
 
 # ? instansiate flask babel
-if app.debug:
-    old = ".venv/Lib/site-packages/babel/locale-data/fr_CH.dat"
-    new = (
-        ".venv/Lib/site-packages/babel/locale-data/pseudo.dat",
-        ".venv/Lib/site-packages/babel/locale-data/ids.dat",
-    )
-    for file in new:
-        if not os.path.exists(file):
-            with open(old, "rb") as file1:
-                with open(file, "+wb") as file2:
-                    file2.write(file1.read())
+# if app.debug:
+#     old = ".venv/Lib/site-packages/babel/locale-data/fr_CH.dat"
+#     new = (
+#         ".venv/Lib/site-packages/babel/locale-data/pseudo.dat",
+#         ".venv/Lib/site-packages/babel/locale-data/ids.dat",
+#     )
+#     for file in new:
+#         if not os.path.exists(file):
+#             with open(old, "rb") as file1:
+#                 with open(file, "+wb") as file2:
+#                     file2.write(file1.read())
 
-    from babel.core import LOCALE_ALIASES
+#     from babel.core import LOCALE_ALIASES
 
-    LOCALE_ALIASES["pseudo"] = "pseudo"
-    LOCALE_ALIASES["ids"] = "ids"
+#     LOCALE_ALIASES["pseudo"] = "pseudo"
+#     LOCALE_ALIASES["ids"] = "ids"
+
 
 def get_locale() -> str:
     # if a user is logged in, use the locale from the user settings
@@ -219,25 +236,29 @@ def get_locale() -> str:
     # example.  The best match wins.
     return request.accept_languages.best_match(LANGAGES, default="en")
 
+
 babel = Babel(app, locale_selector=get_locale)
 
 from chrono_des_vignes.models import User  # noqa: E402
+
 
 @login_manager.user_loader
 def load_user(user_id: str):
     return db.session.query(User).filter_by(id=user_id).first()
 
+
 param = ParamSpec("param")
 ret = TypeVar("ret")
+
 
 def admin_required(func: Callable[param, ret]) -> Callable[param, ret | Response]:
     """
     Modified login_required decorator to restrict access to admin group.
     """
+
     @login_required
     @wraps(func)
     def decorated_view(*args: param.args, **kwargs: param.kwargs) -> ret | Response:
-        
         if not current_user.admin:
             flash(_("flash.error.mustadmin"), "danger")
             return redirect(url_for("home"))
@@ -254,20 +275,58 @@ def admin_required(func: Callable[param, ret]) -> Callable[param, ret | Response
     return decorated_view
 
 
-def lang_url_for(*args: Any, **kwargs: Any) -> str:
-    if "static" in args or kwargs.get("lang"):
-        return url_for(*args, **kwargs)
-    lang:str|None = _("app.lang")
-    if args[0].startswith("doc"):
+def lang_url_for(
+    endpoint: str,
+    *,
+    _anchor: str | None = None,
+    _method: str | None = None,
+    _scheme: str | None = None,
+    _external: bool | None = None,
+    **values: Any,  # pyright: ignore[reportAny]
+) -> str:
+    if "static" in endpoint or values.get("lang"):
+        return url_for(
+            endpoint,
+            _anchor=_anchor,
+            _method=_method,
+            _scheme=_scheme,
+            _external=_external,
+            **values,
+        )
+    lang: str | None = _("app.lang")
+    if endpoint.startswith("doc"):
         if lang == "fr":
             lang = None
-        url = url_for(*args, lang=lang, **kwargs)
+        url = url_for(
+            endpoint,
+            _anchor=_anchor,
+            _method=_method,
+            _scheme=_scheme,
+            _external=_external,
+            lang=lang,
+            **values,
+        )
         if url[-1] != "/":
             url += "/"
         return url
     if lang == request.accept_languages.best_match(LANGAGES):
-        return url_for(*args, **kwargs)
-    return url_for(*args, lang=lang, **kwargs)
+        return url_for(
+            endpoint,
+            _anchor=_anchor,
+            _method=_method,
+            _scheme=_scheme,
+            _external=_external,
+            **values,
+        )
+    return url_for(
+        endpoint,
+        _anchor=_anchor,
+        _method=_method,
+        _scheme=_scheme,
+        _external=_external,
+        lang=lang,
+        **values,
+    )
 
 
 @app.context_processor
@@ -282,10 +341,14 @@ def jinja_context():
 
 routeP = ParamSpec("routeP")
 routeR = TypeVar("routeR", bound=ResponseReturnValue)
+
+
 def set_route(
-    blueprint: Flask | Blueprint, path: str, **options: Any
+    blueprint: Flask | Blueprint,
+    path: str,
+    **options: Any,  # pyright: ignore[reportAny]
 ) -> Callable[..., Callable[routeP, routeR]]:
-    def decorator(func: Callable[routeP, routeR])->Callable[routeP, routeR]:
+    def decorator(func: Callable[routeP, routeR]) -> Callable[routeP, routeR]:
         @blueprint.route(f"/<lang>{path}", **options)
         @blueprint.route(path, **options)
         @wraps(func)
@@ -318,26 +381,33 @@ def http_error(error: exceptions.HTTPException) -> Response:
     html = render_template("error/simple_error.html", error=error)
     return make_response(html, error.code)
 
+
 # ? end error Handling
 
 # defini les pages du site web
 from chrono_des_vignes.users import users  # noqa: E402
+
 app.register_blueprint(users)
 
 from chrono_des_vignes.admin import admin  # noqa: E402
+
 app.register_blueprint(admin)
 
 from chrono_des_vignes.view import view  # noqa: E402
+
 app.register_blueprint(view)
 
 if app.debug:
     from chrono_des_vignes.dev import dev
+
     app.register_blueprint(dev)
 
 from chrono_des_vignes.livetrack import livetrack  # noqa: E402
+
 app.register_blueprint(livetrack)
 
 from .api import api_blueprint  # noqa: E402
+
 app.register_blueprint(api_blueprint)
 
 from chrono_des_vignes import routes  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]

@@ -1,0 +1,144 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"workbench.iconTheme": "vscode-icons",
+		"editor.linkedEditing": true,
+		"files.associations": {
+			"*.html":"jinja-html"
+		},
+		"emmet.includeLanguages": {
+			"jinja-html": "html"
+		},
+		"redhat.telemetry.enabled":false,
+		"yaml.schemas": {
+			"https://squidfunk.github.io/mkdocs-material/schema.json":"mkdocs.yml"
+		},
+		"yaml.customTags": [
+			"!ENV scalar",
+			"!ENV sequence",
+			"!relative scalar",
+			"tag:yaml.org,2002:python/name:material.extensions.emoji.to_svg",
+			"tag:yaml.org,2002:python/name:material.extensions.emoji.twemoji",
+			"tag:yaml.org,2002:python/name:pymdownx.superfences.fence_code_format"
+		],
+    	"git.enableSmartCommit": true,
+		// psi-header
+		"psi-header.config": {
+			"forceToTop": true,
+			"blankLinesAfter": 1,
+			"author": "Romain Maurer",
+			"license": "GPL-3.0-or-later",
+			"initials": "RM",
+			"spacesBetweenYears": false,
+			"authorEmail": "chrono-des-vignes@ikmail.com",
+			"copyrightHolder": "Romain Maurer",
+		},
+		"psi-header.variables": [
+			["projectTitle", "Chrono Des Vignes"],
+			["projectDescription", "a timing system for sports events"]
+		],
+		"psi-header.changes-tracking": {
+			"isActive": true,
+			"autoHeader": "manualSave",
+			"enforceHeader": true,
+			"updateLicenseVariables": true,
+			"includeGlob": [
+				"**/chrono_des_vignes/**/*.{py,html}"
+			],
+			"excludeGlob": [
+				"**/chrono_des_vignes/templates/doc/**/*.*",
+				"**/settings.json"
+			],
+			"exclude": [
+				"markdown",
+				"json",
+				"jsonc",
+				"shellscript"
+			],
+			"replace": ["Copyright"]
+		},
+		"psi-header.lang-config": [
+			{
+				"language":"html",
+				"begin": "<!--",
+				"prefix": " * ",
+				"end": "-->",
+				"lineLength": 80,
+				"ignoreLines": [
+					"<!DOCTYPE",
+					"<html"
+				]
+			},
+			{
+				"language": "jinja-html",
+				"mapTo": "html"
+			},
+			{
+				"language": "python",
+				"begin": "\"\"\"",
+				"prefix": "# ",
+				"end": "\"\"\"",
+				"ignoreLines": [
+					"from",
+					"import",
+					"def",
+					"class"
+				]
+			}
+		],
+		"psi-header.templates": [
+			{
+				"language": "*",
+				"template": [
+					"<<projectTitle>>",
+					"<<projectDescription>>",
+					"",
+					"Copyright © <<yeartoyear(fc, now)>> <<copyrightHolder>>",
+					"This file is part of <<projectTitle>>",
+					"",
+					"<<projectTitle>> is free software: you can redistribute it and/or modify it under",
+					"the terms of the GNU General Public License as published by the Free Software Foundation,",
+					"either version 3 of the License, or (at your option) any later version.",
+					"",
+					"<<projectTitle>> is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;",
+					"without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+					"See the GNU General Public License for more details.",
+					"You should have received a copy of the GNU General Public License along with Foobar.",
+					"If not, see <https://www.gnu.org/licenses/>.",
+					"",
+					"You may contact me at <<authorEmail>>"
+				]
+			}
+		],
+    	"git.confirmSync": false,
+		"[python]": {
+			"diffEditor.ignoreTrimWhitespace": false,
+			"editor.formatOnType": true,
+			"editor.defaultFormatter": "charliermarsh.ruff",
+			"editor.formatOnSave": true
+		},
+		"python.languageServer": "None",
+		"telemetry.feedback.enabled": false,
+		"database-client.telemetry.usesOnlineServices": false,
+		"jinja-lsp.lang": "python",
+		"jinja-lsp.hide_undefined": false,
+	},
+	"extensions": {
+		"recommendations": [
+			"detachhead.basedpyright",
+			"ms-python.python",
+			"edwinhuish.better-comments-next",
+			"redhat.vscode-yaml",
+			"psioniq.psi-header",
+			"charliermarsh.ruff",
+			"vscode-icons-team.vscode-icons",
+			"cweijan.vscode-mysql-client2",
+			"tamasfe.even-better-toml",
+			"hongquan.dragon-jinja",
+		]
+	}
+}
