@@ -18,8 +18,23 @@ To get started with Chrono des Vignes, please follow these steps:
     uv run invoke serve
     ```
 
+### migrate the db (if changed)
+```
+uv run flask --app chrono_des_vignes db stamp
+uv run flask --app chrono_des_vignes db upgrade
+```
+
+#### add migration if change the db schema (models.py)
+```uv run flask db migrate -m "your migration message"```
+
+ <!--
+ not online for now 
 ## Live Demo
 Experience Chrono des Vignes in action by visiting our [Deployed version](https://chronodesvignes.eu.pythonanywhere.com/).
 
 ## Documentation
 For detailed usage instructions, please refer to our [Documentation](https://chronodesvignes.eu.pythonanywhere.com/doc).
+-->
+## Contact 
+You may contact me at chrono-des-vignes@ikmail.com
+or from my github https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes

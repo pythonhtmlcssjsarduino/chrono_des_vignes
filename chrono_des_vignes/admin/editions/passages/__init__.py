@@ -34,7 +34,7 @@ from chrono_des_vignes.models import (
     Edition,
     PassageKey,
     Stand,
-    Parcours,
+    ParcoursVersion,
     Passage,
     Inscription,
     Trace,
@@ -70,7 +70,8 @@ def dashboard(event_name: str, edition_name: str) -> str | Response:
                 (f"{s.id}", f"{s.parcours.name} - {s.name}")
                 for s in Stand.query()
                 .filter(
-                    Stand.parcours.has(Parcours.id == parcours.id), Stand.chrono == True
+                    Stand.parcours.has(ParcoursVersion.id == parcours.id),
+                    Stand.chrono == True,
                 )
                 .all()
             ]  # noqa: E712
@@ -189,7 +190,7 @@ def chrono_home() -> str | Response:
     return render_template("chrono_home.html", user_data=user, form=form)
 
 
-def parcours_chrono_list_dist(parcours: Parcours, dist_stand: list[int]) -> None:
+def parcours_chrono_list_dist(parcours: ParcoursVersion, dist_stand: list[int]) -> None:
     part_list: list[Stand] = []
     dist_list: list[float] = []
     start = parcours.start_stand

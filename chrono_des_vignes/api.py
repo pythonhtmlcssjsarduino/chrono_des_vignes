@@ -1,22 +1,23 @@
-'''
+"""
 # Chrono Des Vignes
 # a timing system for sports events
-# 
-# Copyright © 2025 Romain Maurer
+#
+# Copyright © 2025-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
-# 
+#
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software Foundation,
 # either version 3 of the License, or (at your option) any later version.
-# 
+#
 # Chrono Des Vignes is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
 # without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
 # You should have received a copy of the GNU General Public License along with Foobar.
 # If not, see <https://www.gnu.org/licenses/>.
-# 
+#
 # You may contact me at chrono-des-vignes@ikmail.com
-'''
+"""
+
 from __future__ import annotations
 from functools import wraps
 from typing import Any, Callable, Literal, Self
@@ -36,8 +37,10 @@ class ApiBlueprint:
             [ApiBlueprint, Literal["login", "admin", "event"]], ResponseReturnValue
         ]
         | None = None,
-        version: str = "v1",):
+        version: str = "v1",
+    ):
         return ApiBlueprint(package, ["admin_required"], error_callback, version)
+
     @staticmethod
     def login(
         package: str,
@@ -45,8 +48,10 @@ class ApiBlueprint:
             [ApiBlueprint, Literal["login", "admin", "event"]], ResponseReturnValue
         ]
         | None = None,
-        version: str = "v1",):
+        version: str = "v1",
+    ):
         return ApiBlueprint(package, ["login_required"], error_callback, version)
+
     def __init__(
         self,
         package: str,
@@ -60,7 +65,7 @@ class ApiBlueprint:
         | None = None,
         version: str = "v1",
     ):
-        self.package: str = package.strip("/ ").replace(" ", "")
+        self.package: str = package.strip("/").replace(" ", "")
         self.version: str = version
         self.decorators: list[Callable[[Any], Any]] = [
             self.admin_required
@@ -87,7 +92,7 @@ class ApiBlueprint:
                 return func(*args, **kwargs)
 
             for decorator in reversed(self.decorators):
-                wrapper = decorator(wrapper)
+                wrapper = decorator(wrapper)  # pyright: ignore[reportAny]
 
             wrapper = api_blueprint.route(
                 f"/{self.version}/{self.package}/{endpoint.lstrip('/')}",
@@ -100,10 +105,10 @@ class ApiBlueprint:
     def login_required[ret: ResponseReturnValue, **param](
         self, func: Callable[param, ret]
     ) -> Callable[param, ret | ResponseReturnValue]:
-        def wrapper(*args: param.args, **kwargs: param.kwargs):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
             if not current_user.is_authenticated:
                 return self.unauthorized(self, "login")
-
             return func(*args, **kwargs)
 
         return wrapper
@@ -112,7 +117,8 @@ class ApiBlueprint:
         self, func: Callable[param, ret]
     ) -> Callable[param, ret | ResponseReturnValue]:
         @self.login_required
-        def wrapper(*args: param.args, **kwargs: param.kwargs):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
             if not current_user.admin:
                 return self.unauthorized(self, "admin")
             if (

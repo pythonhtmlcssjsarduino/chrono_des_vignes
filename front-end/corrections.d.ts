@@ -10,4 +10,18 @@ declare module 'leaflet' {
     interface Layer {
         bindContextMenu(options: {contextmenu?: boolean; contextmenuItems?: ContextMenuItem[];}): this;
     }
+
+    interface Map {
+        contextmenu: {
+        showAt(latlng: LatLng): void;
+        hide(): void;
+        addItem(options: any): void;
+        removeItem(item: any): void;
+        };
+    }
+
+    interface MapOptions {
+        contextmenu?: boolean;
+        contextmenuItems?: ContextMenuItem[];
+    }
 }

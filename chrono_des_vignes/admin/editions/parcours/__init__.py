@@ -49,7 +49,13 @@ from chrono_des_vignes import (
 )
 from flask_login import login_required, current_user
 from chrono_des_vignes.lib import assert404
-from chrono_des_vignes.models import Event, Edition, Parcours, Passage, Inscription
+from chrono_des_vignes.models import (
+    Event,
+    Edition,
+    ParcoursVersion,
+    Passage,
+    Inscription,
+)
 from flask_socketio import join_room, leave_room, emit
 from ..passages import get_passage_data
 from typing import Any, cast
@@ -88,7 +94,7 @@ def parcours_disconnect() -> None:
 
 @socketio.on("get_parcours_passage", namespace="/edition/parcours")
 def get_parcours_passages(parcours_id: int) -> list[dict[str, Any]]:
-    parcours = Parcours.query().get(parcours_id)
+    parcours = ParcoursVersion.query().get(parcours_id)
     edition = Edition.query().get(cast(str, session["room"]).split("-")[3])
     inscriptions = (
         Inscription.query().filter_by(edition=edition, parcours=parcours).all()
@@ -136,7 +142,7 @@ def get_parcours_passages(parcours_id: int) -> list[dict[str, Any]]:
 
 @socketio.on("launch_parcours", namespace="/edition/parcours")
 def launch_parcours(data: dict[str, Any]) -> None:
-    parcours = Parcours.query().get(data.get("parcours_id"))
+    parcours = ParcoursVersion.query().get(data.get("parcours_id"))
     edition = Edition.query().get(cast(str, session["room"]).split("-")[3])
     if parcours and edition and data.get("start_time"):
         start_time = datetime.fromtimestamp(cast(float, data["start_time"]) / 1000)
@@ -200,7 +206,7 @@ def launch_parcours(data: dict[str, Any]) -> None:
 
 @socketio.on("stop_parcours", namespace="/edition/parcours")
 def stop_parcours(data: dict[str, Any]) -> None:
-    parcours = Parcours.query().get(data.get("parcours_id"))
+    parcours = ParcoursVersion.query().get(data.get("parcours_id"))
     edition = Edition.query().get(cast(str, session["room"]).split("-")[3])
 
     if parcours and edition:

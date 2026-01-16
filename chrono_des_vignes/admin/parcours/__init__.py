@@ -31,7 +31,14 @@ from .form import (
     New_parcours_form,
 )
 from flask_login import login_required, current_user
-from chrono_des_vignes.models import Event, Stand, Trace, Parcours
+from chrono_des_vignes.models import (
+    Event,
+    Parcours,
+    Stand,
+    Trace,
+    ParcoursVersion,
+    get_column_max_length,
+)
 from folium import Map, Marker, Icon, PolyLine, Popup, LayerControl, TileLayer
 from folium.template import Template
 from colour import Color
@@ -41,6 +48,7 @@ from chrono_des_vignes.lib import (
     get_points_elevation,
     calc_points_dist,
     midpoint,
+    is_valide_name,
 )
 from sqlalchemy import or_
 from werkzeug.wrappers.response import Response
@@ -81,11 +89,56 @@ class ParcoursData(TypedDict):
     modif_allowed: bool
 
 
-@api.route("/get_parcours/<int:event_id>/<int:parcours_id>")
-def get_parcours(event_id: int, parcours_id: int):
-    event = Event.query().filter_by(id=event_id).first_or_404()
-    parcours = assert404(event.parcours.filter_by(id=parcours_id).first())
+@api.route("/create_parcours/<int:event_id>", method="POST")
+def create_parcours(event_id: int):
+    data = request.get_data().decode()
+    name = data.split("&")[0].split("=")[1]
+    if not is_valide_name(name, get_column_max_length(Parcours, "name"), 0):
+        flash("invalide name :", "warning")
+        return redirect(
+            url_for(
+                "admin.parcours.parcours_page",
+                event_name=Event.query().filter_by(id=event_id).first_or_404().name,
+            )
+        )
 
+    # region create parcours
+
+    # create Parcours Object
+    parcours = Parcours(name, event_id)
+    db.session.add(parcours)
+    db.session.commit()
+    db.session.refresh(parcours)
+    # create a first version
+    version = ParcoursVersion(parcours.id, version="1")
+    db.session.add(version)
+    db.session.commit()
+    db.session.refresh(version)
+    # with a first start stand
+    stand = Stand("", 1000, 0, version.id)
+    db.session.add(stand)
+    db.session.commit()
+
+    # endregion
+    return redirect(
+        url_for(
+            "admin.parcours.dev_parcours_page",
+            event_name=Event.query().filter_by(id=event_id).first_or_404().name,
+            parcours_name=parcours.name,
+        )
+    )
+
+
+@api.route("/get_parcours/<int:event_id>/<int:parcours_version_id>")
+def get_parcours(event_id: int, parcours_version_id: int):
+    parcours = (
+        ParcoursVersion.query()
+        .filter(
+            ParcoursVersion.parcours.has(Parcours.event_id == event_id),
+            ParcoursVersion.id == parcours_version_id,
+        )
+        .first_or_404()
+    )
     data: ParcoursData = {
         "id": parcours.id,
         "name": parcours.name,
@@ -130,6 +183,9 @@ def get_parcours(event_id: int, parcours_id: int):
             )
             segment_index += 1
 
+    if len(data["stands"]) == 1 and data["stands"][0]["lat"] == 1000:
+        data["stands"] = []
+
     return jsonify(data)
 
 
@@ -138,7 +194,9 @@ def get_parcours(event_id: int, parcours_id: int):
 @admin_required
 def dev_parcours_page(event_name: str, parcours_name: str) -> str | Response:
     event = Event.query().filter_by(name=event_name).first_or_404()
-    parcours = assert404(event.parcours.filter_by(name=parcours_name).first())
+    parcours = assert404(
+        event.parcours.filter_by(name=parcours_name).first()
+    ).last_version
     return render_template(
         "parcours_dev.html",
         user_data=current_user,
@@ -151,6 +209,7 @@ def dev_parcours_page(event_name: str, parcours_name: str) -> str | Response:
 # endregion api
 
 
+# region old #############
 @set_route(parcours_bp, "/event/<event_name>/parcours/<parcours_name>/delete")
 @login_required
 @admin_required
@@ -185,7 +244,7 @@ def copy_parcours(event_name: str, parcours_name: str) -> str | Response:
     event = Event.query().filter_by(name=event_name).first_or_404()
     parcours = assert404(event.parcours.filter_by(name=parcours_name).first())
 
-    p = Parcours(
+    p = ParcoursVersion(
         name=f"{parcours.name} copy",
         event_id=event.id,
         description=parcours.description,
@@ -270,7 +329,7 @@ def parcours_page(event_name: str) -> str | Response:
         if not event.parcours.filter_by(name=form.name.data).first():
             # ok nom pas utilisé
 
-            p = Parcours(name=assert400(form.name.data), event_id=event.id)
+            p = ParcoursVersion(name=assert400(form.name.data), event_id=event.id)
             db.session.add(p)
             db.session.commit()
             db.session.refresh(p)
@@ -297,14 +356,13 @@ def parcours_page(event_name: str) -> str | Response:
             )
         else:
             form.name.errors = list(form.name.errors) + ["vous utiliser deja ce nom."]
-    active_parcours = event.parcours.filter_by(archived=False).all()
-    archived_parcours = event.parcours.filter_by(archived=True).all()
+    active_parcours = event.parcours.all()
 
     return render_template(
         "parcours.html",
         user_data=user,
         event_data=event,
-        archived_parcours=archived_parcours,
+        archived_parcours=[],
         active_parcours=active_parcours,
         event_modif=True,
         form=form,
@@ -425,7 +483,7 @@ def make_popup(callback: str):
 
 
 def create_map_and_alt_graph(
-    parcours: Parcours,
+    parcours: ParcoursVersion,
     modif: bool = False,
     rdv: tuple[float, float] | None = None,
     current_stand_id: int | None = None,
@@ -1156,7 +1214,7 @@ def delete_trace(event_name: str, parcours_name: str, trace_id: int) -> str | Re
 
 def render_modify_parcours(
     event: Event,
-    parcours: Parcours,
+    parcours: ParcoursVersion,
     modif_form_type: Literal["marker", "trace", "new"] | None = None,
     modif_form: FlaskForm | None = None,
     **kwargs: Any,

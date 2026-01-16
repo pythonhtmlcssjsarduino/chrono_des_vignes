@@ -39,7 +39,8 @@
 		},
 		"psi-header.variables": [
 			["projectTitle", "Chrono Des Vignes"],
-			["projectDescription", "a timing system for sports events"]
+			["projectDescription", "a timing system for sports events"],
+			["projectPage", "https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes"]
 		],
 		"psi-header.changes-tracking": {
 			"isActive": true,
@@ -110,7 +111,8 @@
 					"You should have received a copy of the GNU General Public License along with Foobar.",
 					"If not, see <https://www.gnu.org/licenses/>.",
 					"",
-					"You may contact me at <<authorEmail>>"
+					"You may contact me at <<authorEmail>>",
+					"or from my github <<projectPage>>"
 				]
 			}
 		],
@@ -121,11 +123,14 @@
 			"editor.defaultFormatter": "charliermarsh.ruff",
 			"editor.formatOnSave": true
 		},
+		"[typescript]": {
+			"editor.tabSize": 2,
+			"editor.formatOnSave": true
+		},
 		"python.languageServer": "None",
 		"telemetry.feedback.enabled": false,
 		"database-client.telemetry.usesOnlineServices": false,
-		"jinja-lsp.lang": "python",
-		"jinja-lsp.hide_undefined": false,
+		"editor.multiCursorModifier": "ctrlCmd"
 	},
 	"extensions": {
 		"recommendations": [
@@ -139,6 +144,7 @@
 			"cweijan.vscode-mysql-client2",
 			"tamasfe.even-better-toml",
 			"hongquan.dragon-jinja",
+			"jackolope.lit-analyzer-plugin",
 		]
 	}
 }

@@ -26,7 +26,7 @@ from chrono_des_vignes.lib import assert400, assert404
 from chrono_des_vignes.models import (
     Event,
     InscriptionData,
-    Parcours,
+    ParcoursVersion,
     Edition,
     Inscription,
     User,
@@ -123,8 +123,8 @@ def validate_new_user(event_name: str, edition_name: str) -> str | Response:
         user = User.query().get_or_404(form.user_id.data)
 
         choices = event.parcours.filter(
-            Parcours.name.in_([eval(data)[0] for data in form.parcours.data]),
-            not_(Parcours.inscriptions.any(Inscription.user_id == user.id)),
+            ParcoursVersion.name.in_([eval(data)[0] for data in form.parcours.data]),
+            not_(ParcoursVersion.inscriptions.any(Inscription.user_id == user.id)),
         ).all()
 
         data = (

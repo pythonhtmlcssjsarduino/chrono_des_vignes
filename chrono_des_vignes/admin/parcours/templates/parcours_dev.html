@@ -18,9 +18,10 @@
  * You may contact me at chrono-des-vignes@ikmail.com
 -->
 
-{% extends "layout.html" %}
+{% extends "layout.html" %}     
 {% block import %}
     <script type="module" src="{{ url_for('static', filename='js/modif_parcours.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='js/forms.css') }}">
 {% endblock import %}
 {% block content %}
     <script>
@@ -29,6 +30,45 @@
     </script>
     <div id="parcours"></div>
     <div id="test"></div>
+    <div class="nice-form-group">
+  <label>Basic form group</label>
+  <input type="text" placeholder="Your name" />
+</div>
+<fieldset class="nice-form-group">
+  <legend>Select your favorite framework</legend>
+  <div class="nice-form-group">
+    <input type="radio" name="radio" id="react" />
+    <label for="react">React</label>
+  </div>
+
+  <div class="nice-form-group">
+    <input type="radio" name="radio" id="vue" />
+    <label for="vue">Vue</label>
+  </div>
+
+  <div class="nice-form-group">
+    <input type="radio" name="radio" id="angular" />
+    <label for="angular">Angular</label>
+  </div>
+</fieldset>
+
+<fieldset class="nice-form-group">
+  <legend>Select your favorite languages</legend>
+  <div class="nice-form-group">
+    <input type="checkbox" id="css" />
+    <label for="css">CSS</label>
+  </div>
+
+  <div class="nice-form-group">
+    <input type="checkbox" id="html" />
+    <label for="html">HTML</label>
+  </div>
+
+  <div class="nice-form-group">
+    <input type="checkbox" id="js" />
+    <label for="js">Javascript</label>
+  </div>
+</fieldset>
 {% endblock content %}
 {#
 <!DOCTYPE html>

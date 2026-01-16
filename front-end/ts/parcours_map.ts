@@ -1,4 +1,4 @@
-import { map, Map, tileLayer, marker, polyline, Icon, LatLngBounds, LatLngBoundsExpression, Polyline, Marker, LayerGroup, layerGroup, control, LatLng, Draggable, divIcon, LatLngExpression, Control, icon, LeafletEvent } from 'leaflet';
+import { map, Map, tileLayer, marker, polyline, Icon, LatLngBounds, LatLngBoundsExpression, Polyline, Marker, LayerGroup, layerGroup, control, LatLng, Draggable, divIcon, LatLngExpression, Control, icon, LeafletEvent, DomUtil, MapOptions, LeafletMouseEvent, latLng as leafletLatlng, latLng } from 'leaflet';
 import { LitElement, html, css, TemplateResult, render, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { ParcoursData, stand, segment, StandData, SegmentData } from './parcours_data';
@@ -9,7 +9,9 @@ import 'leaflet-sidebar-v2'
 import leafletSidebarCss from 'inline:../node_modules/leaflet-sidebar-v2/css/leaflet-sidebar.css'
 import 'iconify-icon'
 import './forms'
-import { Field } from './forms';
+import { Field, LitForm } from './forms';
+import formCss from 'inline:../node_modules/nice-forms.css/dist/nice-forms.css'
+import { createRef, ref } from 'lit/directives/ref.js';
 /**
   // @ts-ignore
   import iconUrl from "leaflet/dist/images/marker-icon.png";
@@ -24,40 +26,40 @@ import { Field } from './forms';
     shadowUrl
   });
  */
-
+function translate(text: string) { return text }
 interface markerIconConfig {
   icon?: iconName
   iconSize?: [number, number],
   iconAnchor?: [number, number],
   color?: string,
 }
-type iconName = 
-      |'account'
-      |'alert'
-      |'check'
-      |'down'
-      |'left'
-      |'minus'
-      |'multible'
-      |'off'
-      |'plus'
-      |'question'
-      |'radius'
-      |'remove'
-      |'remove-variant'
-      |'right'
-      |'start'
-      |'up'
+type iconName =
+  | 'account'
+  | 'alert'
+  | 'check'
+  | 'down'
+  | 'left'
+  | 'minus'
+  | 'multible'
+  | 'off'
+  | 'plus'
+  | 'question'
+  | 'radius'
+  | 'remove'
+  | 'remove-variant'
+  | 'right'
+  | 'start'
+  | 'up'
 
-function markerIcon(config:markerIconConfig) {
-  const iconSize = config.iconSize??[37, 61]
-  const iconAnchor = config.iconAnchor??[19/37*iconSize[0], 46/61*iconSize[1]]
-  const color = config.color??'#000'
+function markerIcon(config: markerIconConfig) {
+  const iconSize = config.iconSize ?? [37, 61]
+  const iconAnchor = config.iconAnchor ?? [19 / 37 * iconSize[0], 46 / 61 * iconSize[1]]
+  const color = config.color ?? '#000'
   return divIcon({
-        className: "iconify-marker",
-        html: `<iconify-icon noobserver icon="mdi:map-marker${config.icon?'-'+config.icon:''}", width="${iconSize[0]}", height="${iconSize[1]}" style="color:${color}"></iconify-icon>`,
-        iconAnchor: iconAnchor,
-     })
+    className: "iconify-marker",
+    html: `<iconify-icon noobserver icon="mdi:map-marker${config.icon ? '-' + config.icon : ''}", width="${iconSize[0]}", height="${iconSize[1]}" style="color:${color}"></iconify-icon>`,
+    iconAnchor: iconAnchor,
+  })
 }
 
 @customElement('parcours-map')
@@ -80,10 +82,19 @@ export class ParcoursMap extends LitElement {
       .middle{
         opacity: 0.5;
       }
-    `, 
+    `,
     unsafeCSS(leafletCss),
     unsafeCSS(leafletContextMenuCss),
-    unsafeCSS(leafletSidebarCss)
+    unsafeCSS(leafletSidebarCss),
+    unsafeCSS(formCss),
+    css`.info-bar {
+      background: white;
+      padding: 6px 12px;
+      border-radius: 5px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.3);
+      font-family: sans-serif;
+      font-size: 14px;
+    }`
   ];
 
   @property({ attribute: false }) data!: ParcoursData
@@ -97,15 +108,16 @@ export class ParcoursMap extends LitElement {
   private modifIcon: any;
   private standEdit!: HTMLElement;
   private segmentEdit!: HTMLElement;
+  public info!: InfoBar;
+  private mapDivRef = createRef<HTMLDivElement>()
 
   firstUpdated() {
-    // Get the container for the map
-    const mapContainer = this.shadowRoot?.querySelector('#map') as HTMLDivElement;
     // Initialize the map
-    const map_options = {
+    const map_options: MapOptions = {
+      contextmenu: true
     }
 
-    this.map = map(mapContainer, map_options).setView([51.505, -0.09], 13);
+    this.map = map(this.mapDivRef.value!, map_options)
     this.map.on('click', (ev) => this.map.contextmenu.hide())
     this.map.on('drag', (ev) => this.map.contextmenu.hide());
     this.tmp_layer = layerGroup().addTo(this.map);
@@ -119,29 +131,32 @@ export class ParcoursMap extends LitElement {
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(this.map);
 
+    this.info = new InfoBar({ position: 'topright' })
+    this.info.addTo(this.map)
+
     this.reload()
   }
 
   createSidebar() {
     this.sidebar = control.sidebar({
       autopan: true,
-      closeButton:true,
+      closeButton: true,
     }).addTo(this.map);
 
     /* add a new panel */
     var panelContent: Control.PanelOptions = {
-        id: 'modif',                     // UID, used to access the panel
-        tab: `<div id="modif"><iconify-icon inline icon="mdi:pen-off"></iconify-icon><div>`,  // content can be passed as HTML string,
-        title: 'Modif',              // an optional pane header
-        position: 'top',                  // optional vertical alignment, defaults to 'top'
-        button: (e)=>this.toggleModif()
+      id: 'modif',                     // UID, used to access the panel
+      tab: `<div id="modif"><iconify-icon inline icon="mdi:pen-off"></iconify-icon><div>`,  // content can be passed as HTML string,
+      title: 'Modif',              // an optional pane header
+      position: 'top',                  // optional vertical alignment, defaults to 'top'
+      button: (e) => this.toggleModif()
     };
     this.sidebar.addPanel(panelContent);
     this.modifIcon = this.shadowRoot?.querySelector('#modif>iconify-icon')
     this.data.on('parcours:modifEnabled', (enabled) => {
-      this.modifIcon.icon = enabled?'mdi:pen-off':'mdi:pen';
-      enabled?this.tmp_layer.addTo(this.map):this.tmp_layer.remove()
-      if (!enabled){
+      this.modifIcon.icon = enabled ? 'mdi:pen-off' : 'mdi:pen';
+      enabled ? this.tmp_layer.addTo(this.map) : this.tmp_layer.remove()
+      if (!enabled) {
         this.sidebar.close()
         this.sidebar.disablePanel('standedit');
         this.sidebar.disablePanel('segmentedit');
@@ -150,74 +165,108 @@ export class ParcoursMap extends LitElement {
 
     // stand modif pannel
     const standEditOptions: Control.PanelOptions = {
-        id: 'standedit',
-        tab: '<iconify-icon height="30px" inline icon="mdi:vector-point-edit"></iconify-icon>',
-        pane: '<div id="standedit"></div>',
-        title: 'Edit Stand',
-        position: 'top',
-        disabled:true
+      id: 'standedit',
+      tab: '<iconify-icon height="30px" inline icon="mdi:vector-point-edit"></iconify-icon>',
+      pane: '<div id="standedit"></div>',
+      title: 'Edit Stand',
+      position: 'top',
+      disabled: true
     };
     this.sidebar.addPanel(standEditOptions);
     this.standEdit = this.shadowRoot?.querySelector('#standedit') as HTMLElement
-    this.data.on('stand:selected', () => {this.sidebar.enablePanel('standedit');this.sidebar.disablePanel('segmentedit');this.sidebar.open('standedit')})
+    this.data.on('stand:selected', () => { this.sidebar.enablePanel('standedit'); this.sidebar.disablePanel('segmentedit'); this.sidebar.open('standedit') })
 
     const segmentEditOptions: Control.PanelOptions = {
-        id: 'segmentedit',
-        tab: '<iconify-icon height="30px" inline icon="mdi:vector-polyline-edit"></iconify-icon>',
-        pane: '<div id="segmentedit"></div>',
-        title: 'Edit Stand',
-        position: 'top',
-        disabled:true
+      id: 'segmentedit',
+      tab: '<iconify-icon height="30px" inline icon="mdi:vector-polyline-edit"></iconify-icon>',
+      pane: '<div id="segmentedit"></div>',
+      title: 'Edit Stand',
+      position: 'top',
+      disabled: true
     }
     this.sidebar.addPanel(segmentEditOptions);
     this.segmentEdit = this.shadowRoot?.querySelector('#segmentedit') as HTMLElement
-    this.data.on('segment:selected', () => {this.sidebar.enablePanel('segmentedit');this.sidebar.disablePanel('standedit');this.sidebar.open('segmentedit')})
+    this.data.on('segment:selected', () => { this.sidebar.enablePanel('segmentedit'); this.sidebar.disablePanel('standedit'); this.sidebar.open('segmentedit') })
 
     var panelContent: Control.PanelOptions = {
-        id: 'config',                     // UID, used to access the panel
-        tab: '<iconify-icon inline icon="mdi:gear"></iconify-icon>',  // content can be passed as HTML string,
-        pane: `<iconify-icon height="20px" inline icon="mdi:pen-off"></iconify-icon>`,        // DOM elements can be passed, too
-        title: 'Config',              // an optional pane header
-        position: 'bottom'                  // optional vertical alignment, defaults to 'top'
+      id: 'config',                     // UID, used to access the panel
+      tab: '<iconify-icon inline icon="mdi:gear"></iconify-icon>',  // content can be passed as HTML string,
+      pane: `<iconify-icon height="20px" inline icon="mdi:pen-off"></iconify-icon>`,        // DOM elements can be passed, too
+      title: 'Config',              // an optional pane header
+      position: 'bottom'                  // optional vertical alignment, defaults to 'top'
     };
     this.sidebar.addPanel(panelContent);
 
     this.shadowRoot?.querySelectorAll('.leaflet-sidebar-close')?.forEach(
-        close=>{close.innerHTML = `<iconify-icon inline icon="mdi:chevron-left"></iconify-icon>`})
+      close => { close.innerHTML = `<iconify-icon inline icon="mdi:chevron-left"></iconify-icon>` })
   }
 
-  modifySegment(segment:SegmentData){
-    const fields:Field[] = []
+  modifySegment(segment: SegmentData) {
+    const fields: Field[] = []
     const panel = html`
       <lit-form .fields=${fields}></lit-form>
     `
-    
+
     render(panel, this.segmentEdit)
   }
 
   modifyStand(stand: StandData) {
-    const fields:Field[] = [
-      {type:'string', name: 'name', label: 'nom', value:stand.name}
+    const form_ref = createRef<LitForm>()
+    const fields: Field[] = [
+      {
+        type: 'string', name: 'name', label: 'nom', value: stand.name, required: true, updater(value) {
+          stand.name = value
+        },
+      },
+      {
+        type: 'boolean', name: 'chrono', label: 'chrono', value: stand.chrono, updater(value) {
+          stand.chrono = value
+        }
+      },
+
+      {
+        type: 'group', name: 'latlng', label: 'position', fields: [
+          {
+            type: 'number', name: 'lat', label: 'latitude', value: stand.lat, precision: 7, required: true, updater(value) {
+              stand.lat = value
+            },
+          },
+          {
+            type: 'number', name: 'lng', label: 'longitude', value: stand.lng, precision: 7, required: true, updater(value) {
+              stand.lng = value
+            },
+          }
+        ]
+      },
     ]
 
+    stand.on('nameChanged', (name) => {
+      form_ref.value!.setString('name', name)
+    })
+    stand.on('latlngChanged', (lat, lng) => {
+      form_ref.value!.setNumber('lat', lat)
+      form_ref.value!.setNumber('lng', lng)
+    })
+    stand.on('chronoChanged', (chrono) => {
+      form_ref.value!.setBoolean('chrono', chrono)
+    })
+
     const panel = html`
-      <lit-form .fields=${fields} .onSubmit=${()=>console.log('hello')
-      }></lit-form>
+      <lit-form ${ref(form_ref)} .fields=${fields} ?noSubmit=${true}></lit-form>
     `
-    
+
     render(panel, this.standEdit)
   }
 
   render() {
     return html`
-        <div id="map" style="height: ${this.height}; width: ${this.width}"></div>
-      </div>
+        <div ${ref(this.mapDivRef)} id="map" style="height: ${this.height}; width: ${this.width}"></div>
     `
   }
 
-  enableModif(){this.data.enableModif()}
-  disableModif(){this.data.disableModif()}
-  toggleModif(){this.data.toggleModif()}
+  enableModif() { this.data.enableModif() }
+  disableModif() { this.data.disableModif() }
+  toggleModif() { this.data.toggleModif() }
 
   // custom
   reload() {
@@ -234,7 +283,38 @@ export class ParcoursMap extends LitElement {
       boundPoints.push(...segment.trace.map(c => [c[0], c[1]] as [number, number]))
       new SegmentController(this, segment, markers);
     });
-    this.map.fitBounds(this.bound ?? (new LatLngBounds(boundPoints)));
+
+    if (this.bound != null || boundPoints.length > 0) {
+      this.map.fitBounds(this.bound ?? (new LatLngBounds(boundPoints)));
+    } else {
+      this.map.fitWorld()
+      this.map.setZoom(1)
+    }
+
+    new EditionController(this, this.data)
+  }
+}
+
+class EditionController {
+  private last_point?: MarkerController
+  private extended_segment?: SegmentController
+  private creating_first_marker: boolean = false
+
+  constructor(private map: ParcoursMap, private data: ParcoursData) {
+    this.map.map.addEventListener('click', this.click.bind(this))
+    if (this.data.isEmpty()) {
+      console.log('empty');
+      this.creating_first_marker = true
+      this.map.info.setText(translate('click on the map to add the first '))
+
+    }
+  }
+
+  click(event: LeafletMouseEvent) {
+    if (this.creating_first_marker) {
+      MarkerController.create(this.map, event.latlng)
+      this.creating_first_marker = false
+    }
   }
 }
 
@@ -243,29 +323,43 @@ class MarkerController {
   readonly color: string = '#338888'
   readonly selectedColor: string = 'red'
   constructor(private map: ParcoursMap, data: StandData) {
-    this.marker = marker([data.lat, data.lng], { draggable: true,
-     icon: markerIcon({color:this.color}),
-     contextmenu:true,
-     contextmenuItems: [
-       {
-         text: 'get latlng', callback(ev, map) {
-           console.log((ev.relatedTarget as any).getLatLng());}
-       },
-     ]
-     }
+    this.marker = marker([data.lat, data.lng], {
+      draggable: true,
+      icon: markerIcon({ color: this.color }),
+      contextmenu: true,
+      contextmenuItems: [
+        {
+          text: translate('get latlng'), callback(ev, map) {
+            console.log((ev.relatedTarget as any).getLatLng());
+          }
+        },
+      ]
+    }
     ).addTo(this.map.map);
     this.marker.on('click', (e) => {
       this.map.data.selectStand(data.id);
     })
+    this.marker.on('drag', (e) => {
+      const markerlatlng = this.marker.getLatLng()
+      data.setLatLng(markerlatlng.lat, markerlatlng.lng)
+    })
     data.on('selected', (selected) => {
-      if(selected){
+      if (selected) {
         this.map.modifyStand(data)
-        this.marker.setIcon(markerIcon({color:this.selectedColor}))
-      }else{
-        this.marker.setIcon(markerIcon({color:this.color}))
+        this.marker.setIcon(markerIcon({ color: this.selectedColor }))
+      } else {
+        this.marker.setIcon(markerIcon({ color: this.color }))
       }
     })
-    this.map.data.on('parcours:modifEnabled', (enabled) => enabled?this.marker.dragging?.enable():this.marker.dragging?.disable())
+    this.map.data.on('parcours:modifEnabled', (enabled) => enabled ? this.marker.dragging?.enable() : this.marker.dragging?.disable())
+  }
+
+  static create(map: ParcoursMap, latlng: LatLng,/** name?: string, ele?: number | null, color?: string, */ chrono?: boolean) {
+    console.log('stand created')
+    const stand = map.data.createStand(latlng.lat, latlng.lng, chrono ?? false)
+    const controller = new MarkerController(map, stand)
+    map.data.selectStand(stand.id);
+    return controller
   }
 }
 
@@ -278,7 +372,7 @@ class SegmentController {
   readonly selectedColor: string = 'red'
 
   constructor(private map: ParcoursMap, private data: SegmentData, markers: { [key: number]: MarkerController }) {
-    if(data.id==109){
+    if (data.id == 109) {
       // log start stand , points and end stand latlng
       console.log(data.id)
       console.log(markers[data.start].marker.getLatLng().toString())
@@ -296,11 +390,11 @@ class SegmentController {
     this.polyline = polyline(polyPoints, { color: this.color }).addTo(this.map.map);
 
     data.on('selected', (selected) => {
-      if(selected){
+      if (selected) {
         this.map.modifySegment(data)
-        this.polyline.setStyle({color: this.selectedColor})
-      }else{
-        this.polyline.setStyle({color: this.color})
+        this.polyline.setStyle({ color: this.selectedColor })
+      } else {
+        this.polyline.setStyle({ color: this.color })
       }
     })
 
@@ -323,13 +417,15 @@ class SegmentController {
       this.vertexs[this.vertexs.length - 1].setLatLng(this.mapMiddle(points[points.length - 2], points[points.length - 1]));
     })
 
-    this.polyline.on('click', ()=>{this.map.data.selectSegment(data.id)})
+    this.polyline.on('click', () => { this.map.data.selectSegment(data.id) })
 
     const c = marker(this.mapMiddle(polyPoints[0], polyPoints[1]), {
       draggable: true,
       icon: divIcon({
         className: "vertex-handle middle",
-      })
+      }),
+      contextmenu: false,
+      contextmenuItems: []
     }).addTo(this.map.tmp_layer);
 
     c.on('drag', (e) => {
@@ -339,12 +435,12 @@ class SegmentController {
     this.vertexs.push(c)
 
     polyPoints.slice(1, -1).forEach((latlng, i, arr) => {
-      if(data.id==109){
+      if (data.id == 109) {
         // log latlng
         console.log(`vertex #${i} LatLng(${latlng[0].toFixed(4)}, ${latlng[1].toFixed(4)})`)
-        
+
         console.log(latlng, arr[i + 1] ?? polyPoints[polyPoints.length - 1], this.mapMiddle(latlng, arr[i + 1] ?? polyPoints[polyPoints.length - 1]));
-        
+
       }
       //main
       this.vertexs.push(this.makeVertexHandele(latlng))
@@ -358,7 +454,7 @@ class SegmentController {
   }
   mapMiddle(a: LatLngExpression, b: LatLngExpression) {
     console.log(`mapmiddle (${a}), (${b}) -> ${this.map.map.layerPointToLatLng(this.map.map.latLngToLayerPoint(a).add(this.map.map.latLngToLayerPoint(b)).divideBy(2))}`);
-    
+
     return this.map.map.layerPointToLatLng(this.map.map.latLngToLayerPoint(a).add(this.map.map.latLngToLayerPoint(b)).divideBy(2));
   }
   refreshMiddleVertex(index: number) {
@@ -375,12 +471,14 @@ class SegmentController {
       }))
     })
     console.log(selected);
-    
-    selected.bindContextMenu({contextmenu:true,contextmenuItems:[{
+
+    selected.bindContextMenu({
+      contextmenu: true, contextmenuItems: [{
         text: 'test', callback(ev, map) {
           console.log((ev.relatedTarget as any).getLatLng());
         }
-      }]});
+      }]
+    });
     selected.off('drag')
     selected.on('drag', (e) => {
       const points = this.polyline.getLatLngs() as LatLng[];
@@ -487,6 +585,35 @@ class SegmentController {
     return cm
   }
 }
+
+class InfoBar extends Control {
+  private _div: HTMLDivElement | undefined;
+
+  constructor(opts?: L.ControlOptions) {
+    super(opts);
+  }
+
+  onAdd(map: L.Map): HTMLElement {
+    this._div = DomUtil.create('div', 'info-bar');
+    this._div.innerText = '';
+    this._div.hidden = true;
+    return this._div;
+  }
+
+  setText(text: string) {
+    if (this._div) {
+      this._div.innerText = text
+      this._div.hidden = false
+    };
+  }
+
+  clear() {
+    if (this._div) {
+      this._div.hidden = true
+    }
+  }
+}
+
 
 declare global {
   interface HTMLElementTagNameMap {
