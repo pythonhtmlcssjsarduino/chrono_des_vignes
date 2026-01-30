@@ -130,7 +130,16 @@
 		"python.languageServer": "None",
 		"telemetry.feedback.enabled": false,
 		"database-client.telemetry.usesOnlineServices": false,
-		"editor.multiCursorModifier": "ctrlCmd"
+		"editor.multiCursorModifier": "ctrlCmd",
+		"files.exclude": {
+			"**/.git": true,
+			"**/__pycache__":true
+		},
+		"files.readonlyInclude": {
+			"**/static/js/*.*":true,
+			"**/static/doc/*.*":true,
+			"**/static/profil_pics/*.*":true,
+		},
 	},
 	"extensions": {
 		"recommendations": [

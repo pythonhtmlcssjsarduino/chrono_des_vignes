@@ -26,7 +26,7 @@ from chrono_des_vignes import admin_required, db, set_route, lang_url_for as url
 from chrono_des_vignes.admin.editions.form import Edition_form
 from flask_login import login_required, current_user
 from chrono_des_vignes.lib import assert400, assert404
-from chrono_des_vignes.models import Event, ParcoursVersion, Edition
+from chrono_des_vignes.models import Event, Parcours, ParcoursVersion, Edition
 from datetime import datetime
 from .dossard import dossard
 from .passages import passages
@@ -58,9 +58,10 @@ def editions_page(event_name: str) -> str | Response:
                 cast(int, eval(p)[0])
                 for p in cast(list[str], (assert400(form.parcours.data)))
             ]  # type: ignore[union-attr]
-            parcours = event.parcours.filter(
-                ParcoursVersion.name.in_(parcours_id)
-            ).all()
+            parcours = [
+                p.last_version
+                for p in event.parcours.filter(Parcours.name.in_(parcours_id)).all()
+            ]
             edition = Edition(
                 name=form.name.data,
                 event_id=event.id,
@@ -71,7 +72,7 @@ def editions_page(event_name: str) -> str | Response:
                 rdv_lat=form.rdv_lat.data,
                 rdv_lng=form.rdv_lng.data,
             )
-            edition.parcours = parcours
+            edition.parcours_version = parcours
             db.session.add(edition)
             db.session.commit()
             flash("edition bien crée", "success")
@@ -145,18 +146,20 @@ def modify_edition_page(event_name: str, edition_name: str) -> str | Response:
             "last_inscription": edition.last_inscription,
             "rdv_lat": edition.rdv_lat,
             "rdv_lng": edition.rdv_lng,
-            "parcours": [str((p.name, p.description)) for p in edition.parcours],
+            "parcours": [
+                str((p.name, p.parcours.description)) for p in edition.parcours_version
+            ],
         }
     )
     form.parcours.choices = [
         str((p.name, p.description))
         for p in event.parcours.filter(
             or_(
-                ParcoursVersion.archived == False,
+                ParcoursVersion.archived.is_(False),
                 ParcoursVersion.editions.any(Edition.id == edition.id),
             )
         ).all()
-    ]  # type: ignore # noqa: E712
+    ]
 
     # ? desactiver le champs si dates deja passé
     form.edition_date.render_kw.pop("disabled", None)
@@ -170,7 +173,9 @@ def modify_edition_page(event_name: str, edition_name: str) -> str | Response:
         # si ils peuvent s'iscrire ne plus modifier la date de l'edition
         form.edition_date.render_kw["disabled"] = "disabled"
         form.parcours.render_kw["disabled"] = "disabled"
-        form.parcours.data = [str((p.name, p.description)) for p in edition.parcours]
+        form.parcours.data = [
+            str((p.name, p.parcours.description)) for p in edition.parcours_version
+        ]
         form.first_inscription.render_kw["disabled"] = "disabled"
         form.name.render_kw["disabled"] = "disabled"
         form.rdv_lat.render_kw["disabled"] = "disabled"

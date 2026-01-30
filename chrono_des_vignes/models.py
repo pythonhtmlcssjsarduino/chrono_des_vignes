@@ -228,7 +228,9 @@ class Parcours(Model):
 
     @property
     def last_version(self):
-        return self.versions.order_by(desc(ParcoursVersion.creation_date)).first()
+        return assert400(
+            self.versions.order_by(desc(ParcoursVersion.creation_date)).first()
+        )
 
 
 class ParcoursVersion(Model):

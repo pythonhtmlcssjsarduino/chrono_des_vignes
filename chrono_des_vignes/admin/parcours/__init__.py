@@ -129,6 +129,32 @@ def create_parcours(event_id: int):
     )
 
 
+# region
+
+# endregion
+
+
+@api.route("/update_parcours/<int:event_id>/<int:parcours_version_id>", method="POST")
+def update_parcours(event_id: int, parcours_version_id: int):
+    parcours = (
+        ParcoursVersion.query()
+        .filter(
+            ParcoursVersion.parcours.has(Parcours.event_id == event_id),
+            ParcoursVersion.id == parcours_version_id,
+        )
+        .first_or_404()
+    )
+    data: Any = request.get_json()  # pyright: ignore[reportAny]
+
+    if not isinstance(data, list):
+        return jsonify({"success": False, "error": "data not valid not a list"})
+
+    for op in data:
+        print(op)
+
+    return jsonify({"success": True, "ids": {}})
+
+
 @api.route("/get_parcours/<int:event_id>/<int:parcours_version_id>")
 def get_parcours(event_id: int, parcours_version_id: int):
     parcours = (

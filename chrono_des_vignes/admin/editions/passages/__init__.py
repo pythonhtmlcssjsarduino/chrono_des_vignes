@@ -65,13 +65,13 @@ def dashboard(event_name: str, edition_name: str) -> str | Response:
     if edition.edition_date > datetime.now():
         # formulaire d'ajout
         form: NewKeyForm | None = NewKeyForm()
-        for i, parcours in enumerate(edition.parcours):
+        for i, parcours in enumerate(edition.parcours_version):
             choices: list[tuple[str, str]] = [("", "")] + [
-                (f"{s.id}", f"{s.parcours.name} - {s.name}")
+                (f"{s.id}", f"{s.parcours_version.name} - {s.name}")
                 for s in Stand.query()
                 .filter(
-                    Stand.parcours.has(ParcoursVersion.id == parcours.id),
-                    Stand.chrono == True,
+                    Stand.parcours_version.has(ParcoursVersion.id == parcours.id),
+                    Stand.chrono.is_(True),
                 )
                 .all()
             ]  # noqa: E712
