@@ -1,5 +1,5 @@
 import { html, render } from "lit";
-import "./parcours_map";
+import "./map_ui";
 import { ParcoursData } from "./parcours_data";
 
 declare global {
@@ -8,8 +8,7 @@ declare global {
     parcours_id: number;
   }
 }
-let data = await ParcoursData.fetch(window.event_id, window.parcours_id)
-console.log(data);
+let data = await ParcoursData.fetch(window.event_id, window.parcours_id);
 (globalThis as any).data = data
 
 let template = html`

@@ -4,7 +4,8 @@ import tailwindPlugin from "esbuild-plugin-tailwindcss";
 import postcss from 'postcss';
 import postcssImport from 'postcss-import';
 import tailwindcss from '@tailwindcss/postcss';
-import tailwindForms from '@tailwindcss/forms';
+import fs from 'fs';
+import path from 'path'
 
 async function transformCss(content, args){
     if (args.path.endsWith('.css')) {
@@ -21,9 +22,13 @@ async function transformCss(content, args){
     }
     return content
 }
+const tsDir = 'ts';
+const entryPoints = fs.readdirSync(tsDir)
+  .filter(file => file.startsWith('.') || !file.endsWith('.ts') ? false : /^[A-Z]/.test(file))
+  .map(file => path.join(tsDir, file));
 
 const commun = {
-    entryPoints:['ts/*.ts'],
+    entryPoints:entryPoints,
     outdir:'../chrono_des_vignes/static/js',
     loader:{
         '.css':'css',

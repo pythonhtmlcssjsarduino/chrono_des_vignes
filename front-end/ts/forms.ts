@@ -3,7 +3,6 @@ import { ref, createRef, Ref } from 'lit/directives/ref.js';
 import { customElement, property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { ifDefined } from "lit/directives/if-defined.js";
-import 'nice-forms.css'
 import formCss from 'inline:../node_modules/nice-forms.css/dist/nice-forms.css'
 
 
@@ -108,7 +107,7 @@ export class LitForm extends LitElement {
               ${ref(this.fields_ref[field.name])}
               name=${field.name}
               id=${field.name}
-              @input=${(e: Event) => field.updater?.(parseFloat((e.target as HTMLInputElement).value))} 
+              @input=${(e: Event) => field.updater?.(parseFloat((e.target as HTMLInputElement).value) || 0)} 
               type="number" 
               value=${ifDefined(field.value?.toPrecision(field.precision))} 
               step=${10 ** (-(field.precision ?? 1) + 1)} 
@@ -206,8 +205,6 @@ export class LitForm extends LitElement {
   }
 
   render() {
-    console.debug('render fields ', this.fields);
-
     return html`
             <form @submit=${this.submitCallback}>
                 <div>

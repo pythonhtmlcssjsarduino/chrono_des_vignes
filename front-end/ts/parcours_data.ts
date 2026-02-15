@@ -1,6 +1,4 @@
-import { LatLng, LatLngExpression } from "leaflet";
 import { createNanoEvents, Emitter } from "nanoevents"
-import { MarkerController } from "./parcours_map";
 
 export interface stand { id: number, name: string, lat: number, lng: number, ele: number, color: string, chrono: boolean }
 export interface segment { id: number, start: number, to: number, trace: [number, number, number | null][], index: number }
@@ -187,7 +185,6 @@ export class ParcoursData {
         this.changes.push(op);
       }
     }
-    console.log(this.changes, this.commitChanges);
     clearTimeout(this.timoutId)
     this.timoutId = setTimeout(this.syncOps.bind(this), 5000);
 
@@ -297,7 +294,7 @@ export class StandData {
   private selected: boolean = false
   private eventEmitter = createNanoEvents<standEvent>()
   constructor(
-    private parcours: ParcoursData,
+    public parcours: ParcoursData,
     id: number,
     name: string,
     lat: number,
@@ -384,6 +381,9 @@ export class StandData {
       lng: value
     })
   }
+  get latlng() {
+    return [this.lat, this.lng] as [number, number]
+  }
   setLatLng(lat: number, lng: number) {
     this._lat = lat;
     this._lng = lng;
@@ -443,7 +443,7 @@ export class SegmentData {
   private selected: boolean = false
   private _id: number
 
-  constructor(private parcours: ParcoursData, id: number, readonly start: number, readonly to: number, trace: SegmentPoint[], readonly index: number) {
+  constructor(public parcours: ParcoursData, id: number, readonly start: number, readonly to: number, trace: SegmentPoint[], readonly index: number) {
     this._trace = trace
     this._id = id
 
@@ -482,15 +482,24 @@ export class SegmentData {
     return this._trace
   }
   set trace(trace: (SegmentPoint | [number, number])[]) {
-    console.log('trace updated');
-
     this._trace = trace.map(point => [point[0], point[1], point[2] ?? null])
+    this.parcours.segmentChange(this.id, this._trace)
+    this.eventEmitter.emit('traceChanged', this._trace)
+  }
+
+  setTracePoint(index: number, point: SegmentPoint | [number, number]) {
+    point = [point[0], point[1], point[2] ?? null]
+    this._trace[index] = point
     this.parcours.segmentChange(this.id, this._trace)
     this.eventEmitter.emit('traceChanged', this._trace)
   }
 
   on<E extends keyof segmentEvent>(event: E, callback: segmentEvent[E]) {
     return this.eventEmitter.on(event, callback)
+  }
+
+  select() {
+    this.parcours.selectSegment(this.id)
   }
 
   static fromJson(data: any): (parcours: ParcoursData) => SegmentData {

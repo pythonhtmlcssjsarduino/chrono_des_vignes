@@ -8,14 +8,14 @@
 		"workbench.iconTheme": "vscode-icons",
 		"editor.linkedEditing": true,
 		"files.associations": {
-			"*.html":"jinja-html"
+			"*.html": "jinja-html"
 		},
 		"emmet.includeLanguages": {
 			"jinja-html": "html"
 		},
-		"redhat.telemetry.enabled":false,
+		"redhat.telemetry.enabled": false,
 		"yaml.schemas": {
-			"https://squidfunk.github.io/mkdocs-material/schema.json":"mkdocs.yml"
+			"https://squidfunk.github.io/mkdocs-material/schema.json": "mkdocs.yml"
 		},
 		"yaml.customTags": [
 			"!ENV scalar",
@@ -25,7 +25,7 @@
 			"tag:yaml.org,2002:python/name:material.extensions.emoji.twemoji",
 			"tag:yaml.org,2002:python/name:pymdownx.superfences.fence_code_format"
 		],
-    	"git.enableSmartCommit": true,
+		"git.enableSmartCommit": true,
 		// psi-header
 		"psi-header.config": {
 			"forceToTop": true,
@@ -38,9 +38,18 @@
 			"copyrightHolder": "Romain Maurer",
 		},
 		"psi-header.variables": [
-			["projectTitle", "Chrono Des Vignes"],
-			["projectDescription", "a timing system for sports events"],
-			["projectPage", "https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes"]
+			[
+				"projectTitle",
+				"Chrono Des Vignes"
+			],
+			[
+				"projectDescription",
+				"a timing system for sports events"
+			],
+			[
+				"projectPage",
+				"https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes"
+			]
 		],
 		"psi-header.changes-tracking": {
 			"isActive": true,
@@ -60,11 +69,13 @@
 				"jsonc",
 				"shellscript"
 			],
-			"replace": ["Copyright"]
+			"replace": [
+				"Copyright"
+			]
 		},
 		"psi-header.lang-config": [
 			{
-				"language":"html",
+				"language": "html",
 				"begin": "<!--",
 				"prefix": " * ",
 				"end": "-->",
@@ -116,7 +127,7 @@
 				]
 			}
 		],
-    	"git.confirmSync": false,
+		"git.confirmSync": false,
 		"[python]": {
 			"diffEditor.ignoreTrimWhitespace": false,
 			"editor.formatOnType": true,
@@ -133,12 +144,12 @@
 		"editor.multiCursorModifier": "ctrlCmd",
 		"files.exclude": {
 			"**/.git": true,
-			"**/__pycache__":true
+			"**/__pycache__": true
 		},
 		"files.readonlyInclude": {
-			"**/static/js/*.*":true,
-			"**/static/doc/*.*":true,
-			"**/static/profil_pics/*.*":true,
+			"**/static/js/*.*": true,
+			"**/static/doc/*.*": true,
+			"**/static/profil_pics/*.*": true,
 		},
 	},
 	"extensions": {
@@ -154,6 +165,40 @@
 			"tamasfe.even-better-toml",
 			"hongquan.dragon-jinja",
 			"jackolope.lit-analyzer-plugin",
+		]
+	},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"name": "server",
+				"type": "debugpy",
+				"request": "launch",
+				"module": "flask",
+				"args": [
+					"--app",
+					"chrono_des_vignes",
+					"run",
+					"--debug"
+				],
+				"jinja": true
+			},
+			{
+				"name": "ts-watch",
+				"type": "node",
+				"request": "launch",
+				"program": "${workspaceFolder}/front-end/esbuild.config.mjs",
+				"cwd": "${workspaceFolder}/front-end",
+				"args": [
+					"--watch"
+				]
+			}
+		],
+		"compounds": [
+			{
+				"name": "front-back dev",
+				"configurations": ["server", "ts-watch"]
+			}
 		]
 	}
 }
