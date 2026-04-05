@@ -24,18 +24,20 @@ from html import escape
 from warnings import deprecated
 from flask import abort
 from sqlalchemy.orm import AppenderQuery, DynamicMapped, Mapper, mapped_column, Mapped
+from sqlalchemy.util.typing import NoneFwd
 from chrono_des_vignes import db, DEFAULT_PROFIL_PIC, Base
 from sqlalchemy_utils import ColorType as ColorType_sql_utils  # pyright: ignore[reportMissingTypeStubs]
 from colour import Color
 from flask_login import UserMixin
 from datetime import datetime, timedelta
 from chrono_des_vignes.lib import assert400, calc_points_dist
-from typing import NamedTuple, cast
+from typing import Any, NamedTuple, Sized, cast
 from collections.abc import Iterable, Iterator
 from markdown import markdown
 from sqlalchemy import (
     asc,
     desc,
+    false,
     not_,
     Table,
     Integer,
@@ -436,13 +438,41 @@ class Trace(Model):
             )
         ]
 
+    @staticmethod
+    def check_path(path: Any):  # pyright: ignore[reportAny]
+        if not isinstance(path, Iterable):
+            return None
+        checked: list[Point] = []
+        for p in path:
+            if not isinstance(p, Iterable):
+                return None
+            p = list(p)
+            p[2] = p[2] if len(p) > 2 else None
+            if (
+                len(p) not in (2, 3)
+                or not isinstance(p[0], (float, int))
+                or not isinstance(p[1], (float, int))
+                or not (isinstance(p[2], (float, int)) or p[2] is None)
+            ):
+                return None
+            checked.append(Point(p[0], p[1], p[2]))
+        return checked
+
     @path.setter
     def path(self, path: list[Point]):
-        self._trace = str(path)
+        self._trace = str([tuple(p) for p in path])
+
+    """
+    Deprecated do not use it use the path property instead
+    """
 
     @property
     def trace(self):
         return self._trace
+
+    """
+    Deprecated do not use it use the path property instead
+    """
 
     @trace.setter
     def trace(self, trace: str):

@@ -1,4 +1,4 @@
-import { Marker, marker, LatLng, divIcon } from "leaflet";
+import { Marker, marker, LatLng, divIcon, ContextMenuItem, Layer } from "leaflet";
 import { StandData } from "../parcours_data.js";
 import { ParcoursMap } from "./map.js";
 import 'iconify-icon'
@@ -40,22 +40,16 @@ function markerIcon(config: markerIconConfig) {
 
 export class MarkerController {
   public marker: Marker;
+  public contextMenu: ContextMenuManager
   readonly color: string = '#338888'
   readonly selectedColor: string = 'red'
   constructor(private map: ParcoursMap, public data: StandData) {
     this.marker = marker([data.lat, data.lng], {
       draggable: true,
-      icon: markerIcon({ color: this.color }),
-      contextmenu: true,
-      contextmenuItems: [
-        {
-          text: 'get latlng', callback(ev, map) {
-            console.log((ev.relatedTarget as any).getLatLng());
-          }
-        },
-      ]
+      icon: markerIcon({ color: this.color })
     }
     ).addTo(this.map.map);
+    this.contextMenu = new ContextMenuManager().addTo(this.marker)
     this.marker.on('click', (e) => {
       this.map.data.selectStand(data.id);
     })
@@ -74,6 +68,7 @@ export class MarkerController {
         this.marker.setIcon(markerIcon({ color: this.color }))
       }
     })
+    data.parcours.on('stand:deleted', ({ id }) => { if (id == data.id) this.marker.remove() })
     this.map.data.on('parcours:modifEnabled', (enabled) => enabled ? this.marker.dragging?.enable() : this.marker.dragging?.disable())
   }
 
@@ -83,5 +78,51 @@ export class MarkerController {
     const controller = new MarkerController(map, stand)
     map.data.selectStand(stand.id);
     return controller
+  }
+}
+
+
+
+class ContextMenuManager<T extends Layer = Layer> {
+  private items: { [key: string]: ContextMenuItem } = {}
+  private layers: T[] = []
+
+  constructor(items?: (ContextMenuItem & { id: string })[]) {
+    (items || []).forEach(item => {
+      const { id, ...options } = item
+      this.items[id] = options
+    });
+  }
+  private get options() {
+    return {
+      contextmenu: true,
+      contextmenuItems: Object.values(this.items)
+    }
+  }
+
+  addItem(item: ContextMenuItem & { id: string }) {
+    const { id, ...options } = item
+    this.items[id] = options
+    this.refresh()
+  }
+  removeItem(id: string) {
+    if (id in this.items) {
+      delete this.items[id]
+      this.refresh()
+    }
+  }
+
+  private refresh() {
+    this.layers.forEach(layer => {
+      layer.bindContextMenu(
+        this.options
+      )
+    })
+  }
+
+  addTo(layer: T) {
+    this.layers.push(layer)
+    this.refresh()
+    return this
   }
 }

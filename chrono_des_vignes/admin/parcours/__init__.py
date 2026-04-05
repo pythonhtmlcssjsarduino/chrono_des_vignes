@@ -19,10 +19,17 @@
 """
 
 from ast import literal_eval
+from chrono_des_vignes.models import ParcoursVersion
 from datetime import datetime
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, abort
 from icecream import ic
-from chrono_des_vignes import admin_required, db, set_route, lang_url_for as url_for
+from chrono_des_vignes import (
+    admin_required,
+    db,
+    ret,
+    set_route,
+    lang_url_for as url_for,
+)
 from chrono_des_vignes.api import ApiBlueprint
 from .form import (
     Parcours_name_form,
@@ -134,9 +141,30 @@ def create_parcours(event_id: int):
 # endregion
 
 
+def pop[T](obj: dict[str, Any], key: str, t: type[T]):
+    if isinstance(p := obj.pop(key, None), t):  # pyright: ignore[reportAny]
+        return p
+    return None
+
+
+def pop_id(obj: dict[str, Any], ids: dict[int, int], key: str = "id"):
+    if (id := pop(obj, key, int)) is not None:
+        return id if id > 0 else ids.get(id, None)
+    return None
+
+
+def err(msg: str):
+    return jsonify(
+        {
+            "success": False,
+            "error": msg,
+        }
+    )
+
+
 @api.route("/update_parcours/<int:event_id>/<int:parcours_version_id>", method="POST")
 def update_parcours(event_id: int, parcours_version_id: int):
-    parcours = (
+    parcours: ParcoursVersion = (
         ParcoursVersion.query()
         .filter(
             ParcoursVersion.parcours.has(Parcours.event_id == event_id),
@@ -147,12 +175,157 @@ def update_parcours(event_id: int, parcours_version_id: int):
     data: Any = request.get_json()  # pyright: ignore[reportAny]
 
     if not isinstance(data, list):
-        return jsonify({"success": False, "error": "data not valid not a list"})
+        return err("data not valid not a list")
+    ic(data)  # pyright: ignore[reportUnknownArgumentType]
+    ids: dict[int, int] = {}
+    alone_stands: dict[int, tuple[float, float]] = {}
+    for op in cast(list[dict[str, Any]], data):
+        match op.pop("op"):
+            case "stand:created":
+                lat = pop(op, "lat", float)
+                lng = pop(op, "lng", float)
+                tempId = pop(op, "tempId", int)
+                if lat is None or lng is None or tempId is None:
+                    return err(
+                        "op stand:created data (lat, lng or tempId) was not provided"
+                    )
 
-    for op in data:
-        print(op)
+                if (  # premier stand
+                    parcours.stands.count() == 1
+                    and (stand := parcours.start).lat == 1000
+                ):
+                    stand.lat = lat
+                    stand.lng = lng
+                    db.session.commit()
+                    ids[tempId] = stand.id
+                else:
+                    alone_stands[tempId] = (lat, lng)
+            case "stand:modif":
+                # Validation de l'ID et récupération de l'objet
+                stand_id = pop(op, "id", int)
+                if stand_id is None:
+                    return err("id field was not provided")
 
-    return jsonify({"success": True, "ids": {}})
+                stand = (
+                    Stand.query()
+                    .filter_by(id=(stand_id if stand_id > 0 else ids.get(stand_id, -1)))
+                    .first()
+                )
+                if stand is None:
+                    return err(f"stand with id {stand_id} do not exist")
+
+                ## actual modifications
+                if (lat := pop(op, "lat", float)) is not None:
+                    stand.lat = lat
+                if (lng := pop(op, "lng", float)) is not None:
+                    stand.lng = lng
+                if (name := pop(op, "name", str)) is not None:
+                    stand.name = name
+                if (color := pop(op, "color", str)) is not None:
+                    try:
+                        stand.color = Color(color)
+                    except ValueError:
+                        return err(
+                            f"{color}) is not a valid color. see https://pypi.org/project/colour/"
+                        )
+                if (chrono := pop(op, "chrono", bool)) is not None:
+                    stand.chrono = chrono
+            case "segment:created":
+                start_id = pop_id(op, ids, "from")
+                to_id = pop(op, "to", int)
+                index = pop(op, "index", int)
+                temp_id = pop(op, "tempId", int)
+
+                # 2. Guard Clause: Validate inputs immediately
+                if (
+                    start_id is None
+                    or to_id is None
+                    or index is None
+                    or temp_id is None
+                ):
+                    return err(
+                        "op segment:created data (from, to, index or tempId) was not provided"
+                    )
+
+                # check if the start stand is a valid one
+                start_stand = (
+                    Stand.query()
+                    .filter_by(id=start_id, parcours_id=parcours_version_id)
+                    .first()
+                )
+                if start_stand is None:
+                    return err(f"stand with id {start_id} do not exist")
+                end = alone_stands.pop(to_id, None)
+                if end is None:
+                    return err("to field does not correspond to an existing stand")
+                ic(Trace.query().filter_by(parcours_id=parcours.id).count(), index)
+                if (
+                    i := Trace.query().filter_by(parcours_id=parcours.id).count()
+                ) != index:
+                    return err(f"the provided index is not valid (expected index {i})")
+
+                end_stand = Stand(
+                    name="", lat=end[0], lng=end[1], parcours_id=parcours.id
+                )
+                db.session.add(end_stand)
+                db.session.commit()
+                db.session.refresh(end_stand)
+                trace = Trace(
+                    index=index,
+                    name="",
+                    parcours_id=parcours.id,
+                    start_id=start_stand.id,
+                    end_id=end_stand.id,
+                )
+                db.session.add(trace)
+                db.session.commit()
+                db.session.refresh(trace)
+                ids[to_id] = end_stand.id
+                ids[temp_id] = trace.id
+
+            case "segment:modif":
+                id = pop_id(op, ids)
+                if id is None:
+                    return err("id field was not provided or not valid")
+                segment = (
+                    Trace.query()
+                    .filter_by(id=id, parcours_id=parcours_version_id)
+                    .first()
+                )
+                if segment is None:
+                    return err(f"no segment with an id {id} found")
+
+                if (trace := Trace.check_path(pop(op, "trace", list))) is not None:
+                    segment.path = trace
+                else:
+                    return err("the provided trace is not valid")
+                if (to := pop(op, "to", int)) is not None and Stand.query().filter_by(
+                    parcours_id=parcours_version_id, id=to
+                ).first() is not None:
+                    segment.end_id = to
+            case "stand:deleted":
+                id = pop_id(op, ids, "id")
+                if id is None:
+                    return err("id was not provided")
+                stand = (
+                    Stand.query()
+                    .filter_by(
+                        parcours_id=parcours_version_id,
+                        id=id,
+                    )
+                    .first()
+                )
+                if stand is None:
+                    return err(f"no stand with an id {id} found")
+                if stand.start_trace.count() + stand.end_trace.count() == 0:
+                    db.session.delete(stand)
+            case _ as o:  # pyright: ignore[reportAny]
+                return jsonify(
+                    {"success": False, "error": f"op {o} is not a recognise operation"}
+                )
+        db.session.commit()
+
+    return jsonify({"success": True, "ids": ids})
 
 
 @api.route("/get_parcours/<int:event_id>/<int:parcours_version_id>")

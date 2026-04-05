@@ -1,6 +1,6 @@
 import { html, render } from "lit";
 import "./map_ui";
-import { ParcoursData } from "./parcours_data";
+import { ParcoursData } from "./parcours_data.js";
 
 declare global {
   interface Window {

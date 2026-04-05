@@ -7,7 +7,7 @@ export type Events = { [K in Ops]: (change: Extract<Changes, { op: K }>) => void
   'parcours:modifEnabled': (enabled: boolean) => void;
   'stand:selected': (id: number) => void;
   'segment:selected': (id: number) => void;
-
+  'idsUpdated': (ids: Record<number, number>) => void;
 }
 
 function getRandomNegId(): number {
@@ -19,13 +19,15 @@ function getRandomNegId(): number {
 interface changeSegmentModif { // modif segment
   op: 'segment:modif',
   id: number, // id du segment
-  trace: [number, number, number | null][],
+  trace?: [number, number, number | null][],
+  to?: number
 }
 interface changeSegmentCreated {
   op: 'segment:created',
   tempId: number,
   from: number,
-  to: number
+  to: number,
+  index: number
 }
 interface changeStandModif { // modif segment
   op: 'stand:modif',
@@ -43,16 +45,20 @@ interface changeStandCreated {
   lat: number
   lng: number
 }
+interface changeStandDeleted {
+  op: 'stand:deleted'
+  id: number
+}
 interface changeParcoursModif {
   op: 'parcours:modif',
   name?: string,
   versionDescription: string,
   description: string
 }
-type Changes = changeSegmentModif | changeSegmentCreated | changeStandModif | changeParcoursModif | changeStandCreated
+type Changes = changeSegmentModif | changeSegmentCreated | changeStandModif | changeParcoursModif | changeStandCreated | changeStandDeleted
 type Ops = Changes['op']
 /**changes that order matter */
-const linearChanges: Ops[] = ['stand:created']
+const linearChanges: Ops[] = ['stand:created', 'stand:deleted']
 // #endregion
 
 export class ParcoursData {
@@ -63,7 +69,6 @@ export class ParcoursData {
   private _segments: SegmentData[];
   private commitChanges: Changes[]
   private changes: Changes[]
-  private tmpIds: { [k: number]: number | undefined } = {}
   private timoutId?: number
   constructor(
     readonly id: number,
@@ -82,6 +87,14 @@ export class ParcoursData {
     this._description = description;
     this._stands = stands.map(stand => stand(this));
     this._segments = segments.map(segment => segment(this));
+
+    document.addEventListener('keydown', e => {
+      if (e.ctrlKey && e.key === 's') {
+        // Prevent the Save dialog to open
+        e.preventDefault();
+        this.syncOps()
+      }
+    });
 
   }
 
@@ -107,6 +120,24 @@ export class ParcoursData {
 
   get_stand(id: number): StandData | undefined {
     return this._stands.find(stand => stand.id == id);
+  }
+  get_segment(id: number): SegmentData | undefined {
+    return this._segments.find(segment => segment.id == id)
+  }
+  get_segment_from_index(index: number): SegmentData | undefined {
+    return this._segments.find(segment => segment.index == index)
+  }
+  get_last_segment() {
+    if (this._segments.length == 0) {
+      return
+    }
+    return this._segments.reduce((previousSegment, segment) => previousSegment.index > segment.index ? previousSegment : segment)
+  }
+  get_last_stand() {
+    if (this._segments.length == 0) {
+      return this._stands.length == 1 ? this._stands[0] : undefined
+    }
+    return this.get_stand(this.get_last_segment()!.to)
   }
 
   on<E extends keyof Events>(event: E, callback: Events[E]) {
@@ -199,24 +230,29 @@ export class ParcoursData {
     console.log('syncing', ops);
 
     const resp = await fetch('/api/v1/parcours/update_parcours/1/3', {
-      method: "POST", // ou 'PUT'
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(ops),
     })
+
     const json = await resp.json();
     console.log(json);
 
+    if (json.success) {
+      this.updateIds(json.ids)
+    }
 
   }
 
   /**update {old:new, ...} all ids (stands + segments) */
   private updateIds(ids: { [k: number]: number }) {
-    this._stands.filter((stand) => stand.id < 0).forEach(stand => {
+    this.eventEmitter.emit('idsUpdated', ids)
+    this._stands.filter((stand) => stand.id < 0 && ids[stand.id]).forEach(stand => {
       stand.updateId(ids[stand.id])
     });
-    this._segments.filter((stand) => stand.id < 0).forEach(stand => {
+    this._segments.filter((stand) => stand.id < 0 && ids[stand.id]).forEach(stand => {
       stand.updateId(ids[stand.id])
     })
   }
@@ -268,9 +304,14 @@ export class ParcoursData {
       op: 'segment:created',
       tempId,
       from: start.id,
-      to: end.id
+      to: end.id,
+      index
     })
     return data
+  }
+  deleteStand(id: number) {
+    this.addOp({ op: 'stand:deleted', id })
+
   }
 }
 
@@ -310,6 +351,7 @@ export class StandData {
     this._ele = ele;
     this._color = color;
     this._chrono = chrono
+
 
     parcours.on('stand:selected', id => {
       if (id == this.id && !this.selected) {
@@ -425,9 +467,8 @@ export class StandData {
       chrono: value
     })
   }
-
   static fromJson(data: any): (parcours: ParcoursData) => StandData {
-    return (parcours: ParcoursData) => new StandData(parcours, data.id, data.name, data.lat, data.lng, data.ele, data.color, data.chrono);
+    return (parcours: ParcoursData) => new StandData(parcours, data.id, data.name, data.lat, data.lng, data.chrono, data.ele, data.color);
   }
 }
 type segmentEvent = {
@@ -442,10 +483,12 @@ export class SegmentData {
 
   private selected: boolean = false
   private _id: number
+  private _to: number
 
-  constructor(public parcours: ParcoursData, id: number, readonly start: number, readonly to: number, trace: SegmentPoint[], readonly index: number) {
+  constructor(public parcours: ParcoursData, id: number, readonly start: number, to: number, trace: SegmentPoint[], readonly index: number) {
     this._trace = trace
     this._id = id
+    this._to = to
 
     parcours.on('stand:selected', id => {
       if (this.selected) {
@@ -469,6 +512,17 @@ export class SegmentData {
         this.eventEmitter.emit('selected', false)
       }
     })
+  }
+  get to() {
+    return this._to
+  }
+  updateEnd(endId: number) {
+    this.parcours.addOp({
+      op: 'segment:modif',
+      id: this._id,
+      to: endId
+    })
+    this._to = endId
   }
   get id(): number {
     return this._id

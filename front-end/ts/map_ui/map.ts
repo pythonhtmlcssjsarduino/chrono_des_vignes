@@ -2,7 +2,7 @@ import { LatLngBoundsExpression, LayerGroup, Control, MapOptions, map, layerGrou
 import { LitElement, css, unsafeCSS, html } from "lit"
 import { customElement, property } from "lit/decorators.js"
 import { createRef, ref } from "lit/directives/ref.js"
-import { ParcoursData } from "../parcours_data.js"
+import type { ParcoursData } from "../parcours_data.js"
 import { SegmentController } from "./segment.js"
 import leafletCss from 'inline:../../node_modules/leaflet/dist/leaflet.css'
 import leafletContextMenuCss from 'inline:../../node_modules/leaflet-contextmenu/dist/leaflet.contextmenu.css'
@@ -70,13 +70,16 @@ export class ParcoursMap extends LitElement {
   firstUpdated() {
     // Initialize the map
     const map_options: MapOptions = {
-      contextmenu: true
+      contextmenu: true,
+      zoom: 1,
+      center: [0, 0]
     }
 
     this.map = map(this.mapDivRef.value!, map_options)
     this.map.on('click', (ev) => this.map.contextmenu.hide())
     this.map.on('drag', (ev) => this.map.contextmenu.hide());
     this.tmp_layer = layerGroup().addTo(this.map);
+    this.data.on('idsUpdated', this.updateId.bind(this))
 
 
     // Add tile layer
@@ -92,8 +95,8 @@ export class ParcoursMap extends LitElement {
     this.edition = new EditionController(this, this.data)
 
     this.createSidebar();
-    this.edition.load()
     this.reload()
+    this.edition.load()
   }
 
   createSidebar() {
@@ -195,11 +198,36 @@ export class ParcoursMap extends LitElement {
       this._segmentControllers[segment.id] = new SegmentController(this, segment);
     });
 
-    if (this.bound != null || boundPoints.length > 0) {
-      this.map.fitBounds(this.bound ?? (new LatLngBounds(boundPoints)));
-    } else {
-      this.map.fitWorld()
-      this.map.setZoom(1)
+
+    //if (this.bound != null || boundPoints.length > 0) {
+    //  this.map.fitBounds(this.bound ?? (new LatLngBounds(boundPoints)));
+    //}
+  }
+  private updateId(ids: Record<number, number>) {
+    this._markerControllers = Object.keys(this._markerControllers).reduce((acc, key) => {
+      // Use the new key if it exists in the map, otherwise keep the old key
+      const newKey = ids[key as any as number] || key as any as number;
+      acc[newKey] = this._markerControllers[key as any as number];
+      return acc;
+    }, {} as Record<number, any>);
+    this._segmentControllers = Object.keys(this._segmentControllers).reduce((acc, key) => {
+      // Use the new key if it exists in the map, otherwise keep the old key
+      const newKey = ids[key as any as number] || key as any as number;
+      acc[newKey] = this._segmentControllers[key as any as number];
+      return acc;
+    }, {} as Record<number, any>);
+  }
+
+  getMarkerController(id: number) {
+    if (id in this.markerControllers) {
+      return this.markerControllers[id]
     }
+    return
+  }
+  getSegmentController(id: number) {
+    if (id in this.segmentControllers) {
+      return this.segmentControllers[id]
+    }
+    return
   }
 }

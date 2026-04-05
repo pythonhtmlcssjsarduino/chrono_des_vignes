@@ -218,3 +218,59 @@ export class LitForm extends LitElement {
         `;
   }
 }
+
+
+export class FormManager {
+  constructor(private div: HTMLElement) {
+
+  }
+
+  string() {
+
+    return this
+  }
+  boolean() {
+
+    return this
+  }
+  number() {
+
+    return this
+  }
+
+  group(builder: (group: {}) => void) {
+
+    return this
+  }
+
+  build() {
+
+  }
+}
+
+const fields = [
+  {
+    type: 'string', name: 'name', label: 'nom', value: '', required: true, updater: (value) => {
+
+    },
+  },
+  {
+    type: 'boolean', name: 'chrono', label: 'chrono', value: false, updater: (value) => {
+
+    }
+  },
+  {
+    type: 'group', name: 'latlng', label: 'position', fields: [
+      {
+        type: 'number', name: 'lat', label: 'latitude', value: 0, precision: 7, required: true, updater: (value) => {
+
+        },
+      },
+      {
+        type: 'number', name: 'lng', label: 'longitude', value: 0, precision: 7, required: true, updater: (value) => {
+
+        },
+      }
+    ]
+  },
+] satisfies Field[]

@@ -20,22 +20,54 @@ interface EditionEvent {
 
 export class EditionController {
   private last_point?: MarkerController
-  private extended_segment?: SegmentController
-  private creating_first_marker: boolean = false
+  private extendedSegment?: SegmentController
+  private creatingFirstMarker: boolean = false
   private stand_form!: StandForm
   private eventEmitter = createNanoEvents<EditionEvent>()
 
   constructor(private map: ParcoursMap, private data: ParcoursData) {
-    this.map.map.on('click', this.click.bind(this))
-    if (this.data.isEmpty()) {
-      console.log('empty parcours creating a new one');
-      this.creating_first_marker = true
-      this.map.info.setText('click on the map to add the first ')
-    }
-
   }
 
   load() {
+    this.map.map.on('click', this.click.bind(this))
+    if (this.data.isEmpty()) {
+      console.log('empty parcours creating a new one');
+      this.creatingFirstMarker = true
+      this.map.info.setText('click on the map to add the first ')
+    } else {
+      const stand = this.map.getMarkerController(this.data.get_last_stand()!.id)!
+      stand.contextMenu.addItem({
+        id: 'extend', text: 'new step from hier', callback: () => {
+          this.extendFromStand(stand)
+        }
+      })
+
+      const segment = this.data.get_last_segment()
+      if (segment) {
+        stand.contextMenu.addItem({
+          id: 'continue', text: 'continue from hier', callback: () => {
+            this.continuePolyline(this.map.getSegmentController(segment.id)!)
+          }
+        })
+        this.eventEmitter.emit('statusChanged', null)
+      } else {
+        this.extendFromStand(stand)
+      }
+    }
+    this.data.on('stand:selected', (id) => {
+      const stand = this.data.get_stand(id)
+      if (stand && this.extendedSegment && this.extendedSegment.data.to != id) {
+
+        const trace = [...this.extendedSegment.data.trace, this.extendedSegment.end.data.latlng]
+        const toDel = this.extendedSegment.data.to
+        this.extendedSegment.data.updateEnd(stand.id)
+        const controller = this.map.getMarkerController(stand.id)!
+        this.extendedSegment.end = controller
+        this.extendedSegment.data.trace = trace
+        this.data.deleteStand(toDel)
+        this.extendFromStand(controller)
+      }
+    })
     //forms
     this.stand_form = new StandForm(this.map.standEdit)
   }
@@ -49,44 +81,89 @@ export class EditionController {
   toggleModif() { this.data.toggleModif() }
 
   continuePolyline(polyline: SegmentController) {
-    throw new Error("not implemented");
-
+    if (this.data.get_last_segment() != polyline.data) {
+      return
+    }
+    if (this.last_point || this.extendedSegment != polyline) {
+      this.extendedSegment = polyline
+      delete this.last_point
+      this.eventEmitter.emit('statusChanged', 'segment')
+    }
   }
   extendFromStand(stand: MarkerController) {
-    throw new Error("not implemented");
-
+    if (this.data.get_last_stand() != stand.data) {
+      return
+    }
+    if (this.last_point != stand || this.extendedSegment) {
+      this.last_point = stand
+      delete this.extendedSegment
+      this.eventEmitter.emit('statusChanged', 'stand')
+    }
   }
   stopEditing() {
-    console.log(this.last_point, this.extended_segment);
-
-    if (this.last_point || this.extended_segment) {
+    if (this.last_point || this.extendedSegment) {
+      if (this.last_point) {
+        this.last_point.contextMenu.removeItem('extend')
+      }
       delete this.last_point
-      delete this.extended_segment
+      delete this.extendedSegment
+
+      const last = this.map.getMarkerController(this.data.get_last_stand()!.id)
+      if (last) {
+        last.contextMenu.addItem({
+          id: 'extend', text: 'new step from hier', callback: () => {
+            this.extendFromStand(last)
+          }
+        })
+      }
       this.eventEmitter.emit('statusChanged', null)
     }
   }
 
   click(event: LeafletMouseEvent) {
     if (!this.data.modif) return
-    if (this.creating_first_marker) {
+    if (this.creatingFirstMarker) {
       const controller = MarkerController.create(this.map, event.latlng)
-      this.creating_first_marker = false
+
+      controller.contextMenu.addItem({
+        id: 'extend', text: 'new step from hier', callback: () => {
+          this.extendFromStand(controller)
+        }
+      })
+
+      this.creatingFirstMarker = false
       this.map.info.clear()
       this.last_point = controller
       this.map.markerControllers[controller.data.id] = controller
-    } else if (this.last_point && !this.extended_segment) {
+    } else if (this.last_point && !this.extendedSegment) {
       console.log('click');
       const stand = MarkerController.create(this.map, event.latlng)
+      this.last_point?.contextMenu.removeItem('extend')
+      this.last_point?.contextMenu.removeItem('continue')
+
       this.map.markerControllers[stand.data.id] = stand
-      const segment = SegmentController.create(this.map, this.last_point, stand, 0)
+      let index = (this.data.get_last_segment()?.index ?? -1) + 1
+      const segment = SegmentController.create(this.map, this.last_point, stand, index)
+
+      stand.contextMenu.addItem({
+        id: 'extend', text: 'new step from hier', callback: () => {
+          this.extendFromStand(stand)
+        }
+      })
+      stand.contextMenu.addItem({
+        id: 'continue', text: 'continue from hier', callback: () => {
+          this.continuePolyline(segment)
+        }
+      })
+
       delete this.last_point
-      this.extended_segment = segment
+      this.extendedSegment = segment
       this.map.segmentControllers[segment.data.id] = segment
-    } else if (!this.last_point && this.extended_segment) {
+    } else if (!this.last_point && this.extendedSegment) {
       console.log('extending');
-      const trace = [...this.extended_segment.data.trace, [this.extended_segment.end.data.lat, this.extended_segment.end.data.lng] as [number, number]]
-      this.extended_segment.end.data.setLatLng(event.latlng.lat, event.latlng.lng)
-      this.extended_segment.data.trace = trace
+      const trace = [...this.extendedSegment.data.trace, [this.extendedSegment.end.data.lat, this.extendedSegment.end.data.lng] as [number, number]]
+      this.extendedSegment.end.data.setLatLng(event.latlng.lat, event.latlng.lng)
+      this.extendedSegment.data.trace = trace
     }
   }
 
