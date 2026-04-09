@@ -80,21 +80,50 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <form action="{{url_for('api.create_parcours', event_id=event_data.id)}}" method="post" id="new_edition_form">
-                    {{ render_form(form, map_label= _('form.start')) }}
+                <form id="new_edition_form">
+                    <div class="mb-3">
+                        <label for="parcours_name" class="form-label">{{ _('admin.parcours.name') }}</label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                     {{ _('admin.parcours.close') }}
                 </button>
-                {{ form.submit_btn(class="btn btn-primary", type='submit', form='new_edition_form') }}
+                <button type="button" class="btn btn-primary" onclick="submitForm()">
+                    {{ _('admin.parcours.create') }}
+                </button>
             </div>
         </div>
     </div>
     <script>
-        modal = new bootstrap.Modal(document.getElementById('new_edition_modal'))
-        {% if form.errors | length %} modal.show(){% endif %}
+        const modal = new bootstrap.Modal(document.getElementById('new_edition_modal'))
+        async function submitForm() {
+            const form = document.getElementById('new_edition_form');
+            const formData = new FormData(form);
+            const name = formData.get('name');
+            if (name.length<=40 && name.trim().length>0) {
+                console.log(name, form)
+                const response = await fetch("/api/v1/parcours/create_parcours/{{ event_data.id }}", {
+                      method: "POST",
+                      body: formData
+                 })
+                 if (response.ok) {
+                      const data = await response.json();
+                      console.log(data)
+                      if (data.success) {
+                        window.location.href = data.url;
+                        } else {
+                          alert("{{ _('admin.parcours.errorcreatingparcours') }}, " + (data.error || "")) 
+                        }
+                 } else {
+                      alert("{{ _('admin.parcours.errorcreatingparcours') }}")
+                 }
+            }else {
+                alert("{{ _('admin.parcours.invalidname') }}")
+            }
+        }
     </script>
 </div>
 {% endblock content %}

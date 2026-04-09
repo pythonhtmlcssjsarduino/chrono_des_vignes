@@ -82,7 +82,9 @@ class ApiBlueprint:
         )
 
     def route[ret: ResponseReturnValue, **param](
-        self, endpoint: str, method: Literal["GET", "POST", "PUT", "DELETE"] = "GET"
+        self,
+        endpoint: str,
+        method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = "GET",
     ):
         """decorator for easely register api endpoint"""
 

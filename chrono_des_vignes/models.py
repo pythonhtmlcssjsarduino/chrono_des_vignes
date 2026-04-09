@@ -24,20 +24,18 @@ from html import escape
 from warnings import deprecated
 from flask import abort
 from sqlalchemy.orm import AppenderQuery, DynamicMapped, Mapper, mapped_column, Mapped
-from sqlalchemy.util.typing import NoneFwd
 from chrono_des_vignes import db, DEFAULT_PROFIL_PIC, Base
 from sqlalchemy_utils import ColorType as ColorType_sql_utils  # pyright: ignore[reportMissingTypeStubs]
 from colour import Color
 from flask_login import UserMixin
 from datetime import datetime, timedelta
 from chrono_des_vignes.lib import assert400, calc_points_dist
-from typing import Any, NamedTuple, Sized, cast
+from typing import Any, NamedTuple, cast
 from collections.abc import Iterable, Iterator
 from markdown import markdown
 from sqlalchemy import (
     asc,
     desc,
-    false,
     not_,
     Table,
     Integer,

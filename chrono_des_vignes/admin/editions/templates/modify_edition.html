@@ -2,7 +2,7 @@
  * Chrono Des Vignes
  * a timing system for sports events
  * 
- * Copyright © 2024-2025 Romain Maurer
+ * Copyright © 2025-2026 Romain Maurer
  * This file is part of Chrono Des Vignes
  * 
  * Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -31,7 +31,7 @@
 {{ render_form(form, map_label=_('form.editionrdv'))}}
 
 <script>
-    const easyMDE = new EasyMDE({element: document.getElementById('markdown-textarea')});
+    const easyMDE = new EasyMDE({element: document.getElementById('markdown-textarea'), toolbar: ["bold", "italic", "heading", "|", "quote", "unordered-list", "ordered-list", "|", "link", "image", "|", "preview"]});
 </script>
 <!-- Modal -->
 
