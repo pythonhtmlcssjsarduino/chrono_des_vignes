@@ -8,6 +8,7 @@ export type Events = { [K in Ops]: (change: Extract<Changes, { op: K }>) => void
   'stand:selected': (id: number) => void;
   'segment:selected': (id: number) => void;
   'idsUpdated': (ids: Record<number, number>) => void;
+  'stand:deleted': (id: number) => void
 }
 
 function getRandomNegId(): number {
@@ -19,15 +20,7 @@ function getRandomNegId(): number {
 interface changeSegmentModif { // modif segment
   op: 'segment:modif',
   id: number, // id du segment
-  trace?: [number, number, number | null][],
-  to?: number
-}
-interface changeSegmentCreated {
-  op: 'segment:created',
-  tempId: number,
-  from: number,
-  to: number,
-  index: number
+  trace?: [number, number, number | null][]
 }
 interface changeStandModif { // modif segment
   op: 'stand:modif',
@@ -39,26 +32,14 @@ interface changeStandModif { // modif segment
   color?: string,
   chrono?: boolean,
 }
-interface changeStandCreated {
-  op: 'stand:created'
-  tempId: number,
-  lat: number
-  lng: number
-}
-interface changeStandDeleted {
-  op: 'stand:deleted'
-  id: number
-}
 interface changeParcoursModif {
   op: 'parcours:modif',
   name?: string,
-  versionDescription: string,
-  description: string
+  versionDescription?: string,
+  description?: string
 }
-type Changes = changeSegmentModif | changeSegmentCreated | changeStandModif | changeParcoursModif | changeStandCreated | changeStandDeleted
+type Changes = changeSegmentModif | changeStandModif | changeParcoursModif
 type Ops = Changes['op']
-/**changes that order matter */
-const linearChanges: Ops[] = ['stand:created', 'stand:deleted']
 // #endregion
 
 export class ParcoursData {
@@ -67,9 +48,9 @@ export class ParcoursData {
   private _description: string;
   private _stands: StandData[];
   private _segments: SegmentData[];
-  private commitChanges: Changes[]
   private changes: Changes[]
   private timoutId?: number
+  private _parcoursModified: boolean = false
   constructor(
     readonly id: number,
     name: string,
@@ -81,7 +62,6 @@ export class ParcoursData {
     readonly modif_allowed: boolean
   ) {
     this.changes = [];
-    this.commitChanges = [];
     this.eventEmitter = createNanoEvents<Events>()
     this._name = name;
     this._description = description;
@@ -96,6 +76,12 @@ export class ParcoursData {
       }
     });
 
+  }
+  set parcoursModified(value: boolean) {
+    this._parcoursModified = value || this._parcoursModified
+  }
+  get parcoursModified() {
+    return this._parcoursModified
   }
 
   get stands(): StandData[] {
@@ -196,54 +182,75 @@ export class ParcoursData {
 
   private async commitOp(op: Changes) {
 
-    // si opération a besoin de respecter l'ordre
-    if (linearChanges.includes(op.op)) {
-      // append all changes to commit stage + the new
-      this.commitChanges.push(...this.changes, op);
-      this.changes = [];
-    } else { // sinon si modif existe dans changes on fusionne sinon append
-      const index = this.changes.findIndex(change => change.op === op.op && (!('id' in change && 'id' in op) || change.id === op.id))
-      if (index != -1) {
-        // fusionne (add or replace each new field)
-        for (const [key, value] of Object.entries(op) as [keyof Changes, any][]) {
-          if (value != undefined) {
-            this.changes[index][key] = value;
-          } else if (key != 'op') {
-            delete this.changes[index][key];
-          }
+    const index = this.changes.findIndex(change => change.op === op.op && (!('id' in change && 'id' in op) || change.id === op.id))
+    if (index != -1) {
+      // fusionne (add or replace each new field)
+      for (const [key, value] of Object.entries(op) as [keyof Changes, any][]) {
+        if (value != undefined) {
+          this.changes[index][key] = value;
+        } else if (key != 'op') {
+          delete this.changes[index][key];
         }
-      } else {
-        this.changes.push(op);
       }
+    } else {
+      this.changes.push(op);
     }
+
     clearTimeout(this.timoutId)
     this.timoutId = setTimeout(this.syncOps.bind(this), 5000);
 
   }
 
   private async syncOps() {
-    console.log(this.commitChanges, this.changes);
 
-    const ops = [...this.commitChanges, ...this.changes]
-    this.commitChanges = []
-    this.changes = []
-    console.log('syncing', ops);
+    if (this.parcoursModified) {
+      // send the entire parcours
+      this.changes = []
+      const resp = await fetch('/api/v1/parcours/update_parcours/1/3', {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(this.toJson()),
+      })
 
-    const resp = await fetch('/api/v1/parcours/update_parcours/1/3', {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(ops),
-    })
+      const json = await resp.json();
+      console.log(json);
 
-    const json = await resp.json();
-    console.log(json);
-
-    if (json.success) {
-      this.updateIds(json.ids)
+      if (json.success) {
+        this._parcoursModified = false
+        this.updateIds(json.ids)
+      }
+    } else if (this.changes.length != 0) {
+      const ops = [...this.changes]
+      this.changes = []
+      console.log('syncing', ops, this.parcoursModified);
+      const resp = await fetch('/api/v1/parcours/update_parcours/1/3', {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(ops),
+      })
+      const json = await resp.json();
+      console.log(json);
     }
 
+  }
+  toJson(): any {
+    return {
+      "creation_date": this.creation_date.toISOString(),
+      "description": this.description,
+      "id": this.id,
+      "modif": this.modif,
+      "modif_allowed": this.modif_allowed,
+      "name": this.name,
+      "segments": this.segments.map(segment => segment.toJson()),
+      "stands": this.stands.map(stand => stand.toJson())
+    }
+  }
+  toString(): string {
+    return `ParcoursData(id=${this.id}, name=${this.name}, description=${this.description}, creation_date=${this.creation_date.toISOString()}, nb_stands=${this.stands.length}, nb_segments=${this.segments.length})`
   }
 
   /**update {old:new, ...} all ids (stands + segments) */
@@ -287,12 +294,7 @@ export class ParcoursData {
     const tempId = getRandomNegId()
     const data = new StandData(this, tempId, '', lat, lng, chrono)
     this._stands.push(data)
-    this.addOp({
-      op: 'stand:created',
-      tempId: tempId,
-      lat,
-      lng
-    })
+    this.parcoursModified = true
     return data
   }
 
@@ -300,18 +302,12 @@ export class ParcoursData {
     const tempId = getRandomNegId()
     const data = new SegmentData(this, tempId, start.id, end.id, [], index)
     this._segments.push(data)
-    this.addOp({
-      op: 'segment:created',
-      tempId,
-      from: start.id,
-      to: end.id,
-      index
-    })
+    this.parcoursModified = true
     return data
   }
   deleteStand(id: number) {
-    this.addOp({ op: 'stand:deleted', id })
-
+    this.eventEmitter.emit('stand:deleted', id)
+    this._stands = this._stands.filter(stand => stand.id != id)
   }
 }
 
@@ -325,6 +321,17 @@ type standEvent = {
 }
 
 export class StandData {
+  toJson(): any {
+    return {
+      "chrono": this.chrono,
+      "color": this.color,
+      "ele": this.ele,
+      "id": this.id,
+      "lat": this.lat,
+      "lng": this.lng,
+      "name": this.name
+    }
+  }
   private _name: string;
   private _lat: number;
   private _lng: number;
@@ -478,6 +485,15 @@ type segmentEvent = {
 }
 export type SegmentPoint = [number, number, number | null]
 export class SegmentData {
+  toJson(): any {
+    return {
+      "id": this.id,
+      "index": this.index,
+      "start": this.start,
+      "to": this.to,
+      "trace": this.trace
+    }
+  }
   private _trace: SegmentPoint[]
   eventEmitter = createNanoEvents<segmentEvent>()
 
@@ -517,11 +533,7 @@ export class SegmentData {
     return this._to
   }
   updateEnd(endId: number) {
-    this.parcours.addOp({
-      op: 'segment:modif',
-      id: this._id,
-      to: endId
-    })
+    this.parcours.parcoursModified = false
     this._to = endId
   }
   get id(): number {

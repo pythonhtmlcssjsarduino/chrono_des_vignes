@@ -13,6 +13,7 @@ dependencies = [
     "flask-bcrypt==1.0.1",
     "flask-login==0.6.3",
     "flask-migrate==4.0.7",
+    "flask-pydantic>=0.14.0",
     "flask-socketio>=5.5.1",
     "flask-sqlalchemy==3.1.1",
     "flask-wtf==1.2.2",

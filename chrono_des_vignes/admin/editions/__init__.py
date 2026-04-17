@@ -193,9 +193,14 @@ def modify_edition_page(event_name: str, edition_name: str) -> str | Response:
             edition.name = form.name.data
             edition.edition_date = form.edition_date.data
             edition.description = form.description.data
-            edition.parcours = event.parcours.filter(
-                ParcoursVersion.name.in_([eval(p)[0] for p in form.parcours.data])
-            ).all()  # type: ignore[union-attr]
+            edition.parcours_version = [
+                p.last_version
+                for p in event.parcours.filter(
+                    Parcours.name.in_(
+                        [eval(p)[0] for p in assert400(form.parcours.data)]
+                    )
+                ).all()
+            ]  # type: ignore[union-attr]
             edition.first_inscription = form.first_inscription.data
             edition.last_inscription = form.last_inscription.data
             edition.rdv_lat = form.rdv_lat.data

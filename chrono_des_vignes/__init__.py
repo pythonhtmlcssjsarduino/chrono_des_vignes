@@ -2,7 +2,7 @@
 # Chrono Des Vignes
 # a timing system for sports events
 #
-# Copyright © 2025-2026 Romain Maurer
+# Copyright © 2024-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
 #
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -22,7 +22,7 @@ import json
 import locale
 import logging
 import os
-from datetime import datetime
+from datetime import date, datetime
 from functools import wraps
 from logging.handlers import SMTPHandler
 from typing import (
@@ -37,6 +37,7 @@ from typing import (
     override,
 )
 from urllib.parse import quote
+from flask.json.provider import DefaultJSONProvider
 from flask.typing import ResponseReturnValue
 from flask_babel import Babel, _, gettext
 from flask_bcrypt import Bcrypt
@@ -64,14 +65,16 @@ from dotenv import load_dotenv
 
 install()
 load_dotenv()
-# met la langue en francais pour le formatage des dates
 
+# met la langue en francais pour le formatage des dates
 locale.setlocale(locale.LC_TIME, "")
 
 app = Flask(__name__)
 app.subdomain_matching = True
 app.config["SERVER_NAME"] = os.getenv("SERVER_NAME")
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
+
+app.config["FLASK_PYDANTIC_VALIDATION_ERROR_RAISE"] = True
 
 password = quote(cast(str, os.environ.get("db_password")))
 username = os.environ.get("db_user")
@@ -94,6 +97,17 @@ LANGAGES: Final[tuple[str, ...]] = ("de", "fr", "en")
 if app.debug:
     LANGAGES += ("ids", "pseudo")  # pyright: ignore[reportConstantRedefinition, reportGeneralTypeIssues]
 PICTURE_SIZE: Final[tuple[int, int]] = (200, 200)
+
+
+class CustomJSONProvider(DefaultJSONProvider):
+    @override
+    def default(self, obj: Any) -> Any:  # pyright: ignore[reportAny, reportIncompatibleMethodOverride]
+        if isinstance(obj, datetime) or isinstance(obj, date):
+            return obj.isoformat()
+        return super().default(obj)  # pyright: ignore[reportAny]
+
+
+app.json = CustomJSONProvider(app)
 
 T = TypeVar("T")
 

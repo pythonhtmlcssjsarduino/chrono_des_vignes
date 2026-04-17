@@ -88,6 +88,7 @@ export class EditionController {
       this.extendedSegment = polyline
       delete this.last_point
       this.eventEmitter.emit('statusChanged', 'segment')
+      this.map.info.setText('click on the map to continue the polyline')
     }
   }
   extendFromStand(stand: MarkerController) {
@@ -98,6 +99,7 @@ export class EditionController {
       this.last_point = stand
       delete this.extendedSegment
       this.eventEmitter.emit('statusChanged', 'stand')
+      this.map.info.setText('click on the map to add a step after ' + stand.data.name)
     }
   }
   stopEditing() {
@@ -116,6 +118,7 @@ export class EditionController {
           }
         })
       }
+      this.map.info.clear()
       this.eventEmitter.emit('statusChanged', null)
     }
   }

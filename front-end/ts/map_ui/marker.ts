@@ -68,7 +68,7 @@ export class MarkerController {
         this.marker.setIcon(markerIcon({ color: this.color }))
       }
     })
-    data.parcours.on('stand:deleted', ({ id }) => { if (id == data.id) this.marker.remove() })
+    data.parcours.on('stand:deleted', (id) => { if (id == data.id) this.marker.remove() })
     this.map.data.on('parcours:modifEnabled', (enabled) => enabled ? this.marker.dragging?.enable() : this.marker.dragging?.disable())
   }
 

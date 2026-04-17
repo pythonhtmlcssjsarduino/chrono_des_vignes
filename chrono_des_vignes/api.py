@@ -2,7 +2,7 @@
 # Chrono Des Vignes
 # a timing system for sports events
 #
-# Copyright © 2025-2026 Romain Maurer
+# Copyright © 2024-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
 #
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -24,7 +24,11 @@ from typing import Any, Callable, Literal, Self
 from flask import Blueprint, jsonify
 from flask.typing import ResponseReturnValue
 from flask_login import current_user
-from icecream import ic
+from flask_pydantic.exceptions import (  # pyright: ignore[reportMissingTypeStubs]
+    JsonBodyParsingError,
+    ManyModelValidationError,
+    ValidationError,
+)
 
 api_blueprint = Blueprint("api", __name__, url_prefix="/api")
 
@@ -133,3 +137,63 @@ class ApiBlueprint:
             return func(*args, **kwargs)
 
         return wrapper
+
+
+@api_blueprint.errorhandler(JsonBodyParsingError)
+def handle_api_json_body_parsing_error(error: JsonBodyParsingError):
+    return (
+        jsonify(
+            {
+                "success": False,
+                "error": "Invalid JSON body",
+                "validation_error": {
+                    "body_params": [
+                        {
+                            "loc": ["body"],
+                            "msg": "Request body must be a JSON object matching the expected schema",
+                            "type": "json.parsing",
+                        }
+                    ]
+                },
+            }
+        ),
+        400,
+    )
+
+
+@api_blueprint.errorhandler(ValidationError)
+def handle_api_validation_error(error: ValidationError):
+    payload: dict[str, Any] = {}
+    if error.body_params is not None:
+        payload["body_params"] = error.body_params
+    if error.form_params is not None:
+        payload["form_params"] = error.form_params
+    if error.path_params is not None:
+        payload["path_params"] = error.path_params
+    if error.query_params is not None:
+        payload["query_params"] = error.query_params
+
+    return (
+        jsonify(
+            {
+                "success": False,
+                "error": "Validation failed",
+                "validation_error": payload,
+            }
+        ),
+        400,
+    )
+
+
+@api_blueprint.errorhandler(ManyModelValidationError)
+def handle_api_many_model_validation_error(error: ManyModelValidationError):
+    return (
+        jsonify(
+            {
+                "success": False,
+                "error": "Validation failed for list payload",
+                "validation_error": {"body_params": error.errors()},
+            }
+        ),
+        400,
+    )

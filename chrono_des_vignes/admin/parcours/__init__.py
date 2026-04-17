@@ -2,7 +2,7 @@
 # Chrono Des Vignes
 # a timing system for sports events
 #
-# Copyright © 2025-2026 Romain Maurer
+# Copyright © 2024-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
 #
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -21,11 +21,13 @@
 from ast import literal_eval
 from datetime import datetime
 from typing import Any, TypedDict, cast
+from flask_pydantic import validate
 
 from colour import Color
 from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
 from icecream import ic
+from pydantic import BaseModel
 from werkzeug.wrappers.response import Response
 
 from chrono_des_vignes import (
@@ -38,6 +40,7 @@ from chrono_des_vignes import (
 )
 from chrono_des_vignes.api import ApiBlueprint
 from chrono_des_vignes.lib import (
+    assert400,
     assert404,
     is_valide_name,
 )
@@ -152,8 +155,21 @@ def err(msg: str, op: dict[str, Any] | None = None, ids: dict[int, int] | None =
     )
 
 
+class ParcoursDataPut(BaseModel):
+    id: int
+    name: str
+    description: str
+    creation_date: datetime
+    stands: list[StandData]
+    segments: list[SegmentData]
+    modif: bool
+    modif_allowed: bool
+
+
 @api.route("/update_parcours/<int:event_id>/<int:parcours_version_id>", method="PUT")
-def update_parcours_put(event_id: int, parcours_version_id: int):
+@validate()
+def update_parcours_put(body: ParcoursDataPut, event_id: int, parcours_version_id: int):
+    ic("put", body.model_dump_json())
     parcours: ParcoursVersion = (
         ParcoursVersion.query()
         .filter(
@@ -162,13 +178,214 @@ def update_parcours_put(event_id: int, parcours_version_id: int):
         )
         .first_or_404()
     )
-    data: Any = request.get_json()  # pyright: ignore[reportAny]
+    # metadata
+    if body.id != parcours.id:
+        return err("id does not correspond to the correct one")
+    parcours.description = body.description
+    parcours.parcours.name = body.name
 
-    ic("put", data)
-    return jsonify({"success": True})
+    segments = sorted(body.segments, key=lambda s: s["index"])
+    stands = body.stands
+
+    # from that type of data we want to update the parcours, the stands and the segments. we will use the id field to know if we need to create a new stand/segment or update an existing one. if the id is negative it means that we need to create a new stand/segment. if the id is positive it means that we need to update an existing stand/segment with that id
+    # we will first check that all the provided stands and segments are valid, then we will update/create them, and at the end we will check if there is any stand/segment that need to be deleted (if they are not in the provided data)
+    # can you do it for me please ?
+    errors: list[str] = []
+    ids: dict[int, int] = {}  # old id to new id
+
+    if len(segments) == 0:
+        # only one stand
+        if len(stands) == 0:
+            # delete all segment and all stand except the start stand (set to the default one)
+            Trace.query().filter_by(parcours_id=parcours_version_id).delete()
+            # first select one stand and set it to default
+            default_stand = assert400(
+                Stand.query().filter_by(parcours_id=parcours_version_id).first()
+            )
+            default_stand.name = ""
+            default_stand.lat = 1000
+            default_stand.lng = 0
+            default_stand.elevation = None
+            default_stand.color = Color("#ff0000")
+            default_stand.chrono = False
+            Stand.query().filter_by(parcours_id=parcours_version_id).filter(
+                Stand.id != default_stand.id
+            ).delete()
+        elif len(stands) == 1:
+            Trace.query().filter_by(parcours_id=parcours_version_id).delete()
+            stand_data = stands[0]
+            # update the stand with the provided data and delete all the other stands
+            stand = (
+                Stand.query()
+                .filter_by(id=stand_data["id"], parcours_id=parcours_version_id)
+                .first()
+            )
+            if stand is None:
+                return err(f"stand with id {id} do not exist")
+            stand.lat = stand_data["lat"]
+            stand.lng = stand_data["lng"]
+            stand.name = stand_data["name"]
+            try:
+                stand.color = Color(stand_data["color"])
+            except ValueError:
+                return err(
+                    f"{stand_data['color']}) is not a valid color. see https://pypi.org/project/colour/"
+                )
+            stand.chrono = stand_data["chrono"]
+            Stand.query().filter_by(parcours_id=parcours_version_id).filter(
+                Stand.id != stand.id
+            ).delete()
+
+        else:
+            return err("if there is no segment there should be maximum one stand")
+    else:  # there is at least one segment
+        curr_index = -1
+        curr_stand_id: int | None = None
+        stands_ids = set[int]()
+        for segment_data in segments:
+            curr_index += 1
+            if segment_data["index"] != curr_index:
+                segment_data["index"] = curr_index
+                errors.append(
+                    f"segment with id {segment_data['id']} had an invalid index, it has been set to {curr_index}"
+                )
+            if segment_data["start"] != curr_stand_id and curr_stand_id is not None:
+                # invalid start stand
+                errors.append(
+                    f"segment with id {segment_data['id']} had an invalid start stand id. fatal error"
+                )
+                return jsonify({"success": False, "errors": errors})
+            curr_stand_id = segment_data["to"]
+            stands_ids.add(segment_data["start"])
+            stands_ids.add(segment_data["to"])
+        unused_stands = set[int]()
+        for stand_data in stands:
+            if stand_data["id"] not in stands_ids:
+                unused_stands.add(stand_data["id"])
+                errors.append(
+                    f"stand with id {stand_data['id']} is not used by any segment, it will be deleted"
+                )
+        # delete unused stands
+        if len(unused_stands) > 0:
+            Stand.query().filter_by(parcours_id=parcours_version_id).filter(
+                Stand.id.in_(unused_stands)
+            ).delete()
+        # delete unused segments
+        segment_ids = set[int](s["id"] for s in segments)
+        Trace.query().filter_by(parcours_id=parcours_version_id).filter(
+            Trace.id.not_in(segment_ids)
+        ).delete()
+
+        # update/create stands
+        for stand_data in stands:
+            if stand_data["id"] not in stands_ids:
+                continue
+            to_create = stand_data["id"] < 0
+            if not to_create:
+                # update the stand with the provided data
+                stand = (
+                    Stand.query()
+                    .filter_by(id=stand_data["id"], parcours_id=parcours_version_id)
+                    .first()
+                )
+                if stand is None:
+                    errors.append(
+                        f"stand with id {id} do not exist, it will be created"
+                    )
+                    to_create = True
+                else:
+                    stand.lat = stand_data["lat"]
+                    stand.lng = stand_data["lng"]
+                    stand.name = stand_data["name"]
+                    stand.elevation = stand_data["ele"]
+                    try:
+                        stand.color = Color(stand_data["color"])
+                    except ValueError:
+                        errors.append(
+                            f"{stand_data['color']}) is not a valid color. see https://pypi.org/project/colour/"
+                        )
+                    stand.chrono = stand_data["chrono"]
+                    db.session.commit()
+            if to_create:
+                # create a new stand
+                # check the color
+                try:
+                    color = Color(stand_data["color"])
+                except ValueError:
+                    errors.append(
+                        f"{stand_data['color']}) is not a valid color. it will be set to #ff0000. see https://pypi.org/project/colour"
+                    )
+                    color = Color("#ff0000")
+                stand = Stand(
+                    name=stand_data["name"],
+                    lat=stand_data["lat"],
+                    lng=stand_data["lng"],
+                    elevation=stand_data["ele"],
+                    color=color,
+                    chrono=stand_data["chrono"],
+                    parcours_id=parcours_version_id,
+                )
+                db.session.add(stand)
+                db.session.commit()
+                db.session.refresh(stand)
+                ids[stand_data["id"]] = stand.id
+
+        # update/create segments
+        for segment_data in segments:
+            to_create = segment_data["id"] < 0
+            if not to_create:
+                # update the segment with the provided data
+                segment = (
+                    Trace.query()
+                    .filter_by(id=segment_data["id"], parcours_id=parcours_version_id)
+                    .first()
+                )
+                if segment is None:
+                    errors.append(
+                        f"segment with id {id} do not exist, it will be created"
+                    )
+                    to_create = True
+                else:
+                    segment.start_id = ids.get(
+                        segment_data["start"], segment_data["start"]
+                    )
+                    segment.end_id = ids.get(segment_data["to"], segment_data["to"])
+                    segment.index = segment_data["index"]
+
+                    if (trace := Trace.check_path(segment_data["trace"])) is not None:
+                        segment.path = trace
+                    else:
+                        errors.append(
+                            f"the provided trace for segment with id {segment_data['id']} is not valid, it will be set to an empty trace"
+                        )
+                        segment.path = []
+                    db.session.commit()
+            if to_create:
+                # create a new segment
+                if (trace := Trace.check_path(segment_data["trace"])) is not None:
+                    path = trace
+                else:
+                    errors.append(
+                        f"the provided trace for segment with id {segment_data['id']} is not valid, it will be set to an empty trace"
+                    )
+                    path = []
+                segment = Trace(
+                    start_id=ids.get(segment_data["start"], segment_data["start"]),
+                    end_id=ids.get(segment_data["to"], segment_data["to"]),
+                    index=segment_data["index"],
+                    name="",
+                    parcours_id=parcours_version_id,
+                )
+                segment.path = path
+                db.session.add(segment)
+                db.session.commit()
+                db.session.refresh(segment)
+                ids[segment_data["id"]] = segment.id
+
+    return jsonify({"success": True, "ids": ids, "errors": errors})
 
 
-@api.route("/update_parcours/<int:event_id>/<int:parcours_version_id>", method="POST")
+@api.route("/update_parcours/<int:event_id>/<int:parcours_version_id>", method="PATCH")
 def update_parcours(event_id: int, parcours_version_id: int):
     parcours: ParcoursVersion = (
         ParcoursVersion.query()
@@ -183,29 +400,8 @@ def update_parcours(event_id: int, parcours_version_id: int):
     if not isinstance(data, list):
         return err("data not valid not a list")
     ic(data)  # pyright: ignore[reportUnknownArgumentType]
-    ids: dict[int, int] = {}
-    alone_stands: dict[int, tuple[float, float]] = {}
     for op in cast(list[dict[str, Any]], data):
         match op.get("op"):
-            case "stand:created":
-                lat = get(op, "lat", float)
-                lng = get(op, "lng", float)
-                tempId = get(op, "tempId", int)
-                if lat is None or lng is None or tempId is None:
-                    return err(
-                        "op stand:created data (lat, lng or tempId) was not provided"
-                    )
-
-                if (  # premier stand
-                    parcours.stands.count() == 1
-                    and (stand := parcours.start).lat == 1000
-                ):
-                    stand.lat = lat
-                    stand.lng = lng
-                    db.session.commit()
-                    ids[tempId] = stand.id
-                else:
-                    alone_stands[tempId] = (lat, lng)
             case "stand:modif":
                 # Validation de l'ID et récupération de l'objet
                 stand_id = get(op, "id", int)
@@ -214,7 +410,7 @@ def update_parcours(event_id: int, parcours_version_id: int):
 
                 stand = (
                     Stand.query()
-                    .filter_by(id=(stand_id if stand_id > 0 else ids.get(stand_id, -1)))
+                    .filter_by(id=stand_id, parcours_id=parcours.id)
                     .first()
                 )
                 if stand is None:
@@ -236,63 +432,8 @@ def update_parcours(event_id: int, parcours_version_id: int):
                         )
                 if (chrono := get(op, "chrono", bool)) is not None:
                     stand.chrono = chrono
-            case "segment:created":
-                start_id = get_id(op, ids, "from")
-                to_id = get(op, "to", int)
-                index = get(op, "index", int)
-                temp_id = get(op, "tempId", int)
-
-                # 2. Guard Clause: Validate inputs immediately
-                if (
-                    start_id is None
-                    or to_id is None
-                    or index is None
-                    or temp_id is None
-                ):
-                    return err(
-                        "op segment:created data (from, to, index or tempId) was not provided",
-                        op,
-                        ids,
-                    )
-
-                # check if the start stand is a valid one
-                start_stand = (
-                    Stand.query()
-                    .filter_by(id=start_id, parcours_id=parcours_version_id)
-                    .first()
-                )
-                if start_stand is None:
-                    return err(f"stand with id {start_id} do not exist")
-                end = alone_stands.pop(to_id, None)
-                if end is None:
-                    return err("to field does not correspond to an existing stand")
-                ic(Trace.query().filter_by(parcours_id=parcours.id).count(), index)
-                if (
-                    i := Trace.query().filter_by(parcours_id=parcours.id).count()
-                ) != index:
-                    return err(f"the provided index is not valid (expected index {i})")
-
-                end_stand = Stand(
-                    name="", lat=end[0], lng=end[1], parcours_id=parcours.id
-                )
-                db.session.add(end_stand)
-                db.session.commit()
-                db.session.refresh(end_stand)
-                trace = Trace(
-                    index=index,
-                    name="",
-                    parcours_id=parcours.id,
-                    start_id=start_stand.id,
-                    end_id=end_stand.id,
-                )
-                db.session.add(trace)
-                db.session.commit()
-                db.session.refresh(trace)
-                ids[to_id] = end_stand.id
-                ids[temp_id] = trace.id
-
             case "segment:modif":
-                id = get_id(op, ids)
+                id = get(op, "id", int)
                 if id is None:
                     return err("id field was not provided or not valid")
                 segment = (
@@ -307,33 +448,20 @@ def update_parcours(event_id: int, parcours_version_id: int):
                     segment.path = trace
                 else:
                     return err("the provided trace is not valid")
-                if (to := get(op, "to", int)) is not None and Stand.query().filter_by(
-                    parcours_id=parcours_version_id, id=to
-                ).first() is not None:
-                    segment.end_id = to
-            case "stand:deleted":
-                id = get_id(op, ids, "id")
-                if id is None:
-                    return err("id was not provided")
-                stand = (
-                    Stand.query()
-                    .filter_by(
-                        parcours_id=parcours_version_id,
-                        id=id,
-                    )
-                    .first()
-                )
-                if stand is None:
-                    return err(f"no stand with an id {id} found")
-                if stand.start_trace.count() + stand.end_trace.count() == 0:
-                    db.session.delete(stand)
-            case _ as o:  # pyright: ignore[reportAny]
+            case "parcours:modif":
+                if (name := get(op, "name", str)) is not None:
+                    parcours.parcours.name = name
+                if (vesionDescription := get(op, "vesionDescription", str)) is not None:
+                    parcours.description = vesionDescription
+                if (description := get(op, "description", str)) is not None:
+                    parcours.parcours.description = description
+            case _ as o:
                 return jsonify(
                     {"success": False, "error": f"op {o} is not a recognise operation"}
                 )
         db.session.commit()
 
-    return jsonify({"success": True, "ids": ids})
+    return jsonify({"success": True})
 
 
 @api.route("/get_parcours/<int:event_id>/<int:parcours_version_id>")
