@@ -2,7 +2,7 @@
 # Chrono Des Vignes
 # a timing system for sports events
 #
-# Copyright © 2025-2026 Romain Maurer
+# Copyright © 2024-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
 #
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -18,7 +18,7 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 """
 
-from flask import Blueprint, redirect, render_template, flash, request, session
+from flask import Blueprint, jsonify, redirect, render_template, flash, request, session
 from icecream import ic
 from chrono_des_vignes import (
     admin_required,
@@ -27,6 +27,7 @@ from chrono_des_vignes import (
     lang_url_for as url_for,
     socketio,
 )
+from chrono_des_vignes.api import ApiBlueprint
 from chrono_des_vignes.lib import assert404, calc_points_dist
 from flask_login import login_required, current_user
 from chrono_des_vignes.models import (
@@ -46,8 +47,105 @@ from flask_socketio import join_room, leave_room, emit
 from flask_babel import _
 from werkzeug.wrappers.response import Response
 from typing import Any, TypedDict, cast
+from pydantic import BaseModel
+from flask_pydantic import validate
 
 passages = Blueprint("passages", __name__, template_folder="templates")
+passages_api = ApiBlueprint.admin("passages", version="v1")
+
+
+@passages_api.route("/list_keys/<int:edition_id>/<int:event_id>")
+def get_keys(edition_id: int, event_id: int):
+    keys = PassageKey.query().filter_by(edition_id=edition_id, event_id=event_id).all()
+    return {
+        "keys": [
+            {
+                "id": key.id,
+                "name": key.name,
+                "key": key.key,
+                "passages": key.passages.count(),
+                "stands": [
+                    {"id": s.id, "name": s.name, "parcours": s.parcours_version.name}
+                    for s in key.stands
+                ],
+            }
+            for key in keys
+        ]
+    }
+
+
+def generate_pronounceable_key(num_syllables: int = 3):
+    consonants = "bcdfghjklmnpqrstvwxyz"
+    vowels = "aeiou"
+    syllables: list[str] = []
+    for _i in range(num_syllables):
+        c1 = secrets.choice(consonants)
+        v = secrets.choice(vowels)
+        c2 = secrets.choice(consonants)
+        syllables.append(f"{c1}{v}{c2}")
+    return "-".join(syllables).upper()
+
+
+@passages_api.route("/create_key/<int:event_id>/<int:edition_id>", method="POST")
+def create_key(event_id: int, edition_id: int):
+    key_code = generate_pronounceable_key()
+    while PassageKey.query().filter_by(key=key_code).first():
+        key_code = generate_pronounceable_key()
+    key = PassageKey(
+        event_id=event_id,
+        edition_id=edition_id,
+        key=key_code,
+        name=request.get_json().get("name", ""),  # pyright: ignore[reportAny]
+    )
+    db.session.add(key)
+    db.session.commit()
+    return jsonify({"id": key.id, "key": key.key})
+
+
+@passages_api.route("/delete_key/<int:key_id>", method="DELETE")
+def delete_key_api(key_id: int):
+    # check if the user is admin and the key exist
+    key: PassageKey = PassageKey.query().get_or_404(key_id)
+    if key.event.createur.id != current_user.id:
+        return jsonify({"success": False, "error": "not allowed"})
+    if key.passages.count() == 0:
+        db.session.delete(key)
+        db.session.commit()
+        return jsonify({"success": True})
+    else:
+        return jsonify({"success": False, "error": "key has passages"})
+
+
+class EditKeyRequest(BaseModel):
+    id: int
+    name: str | None = None
+    stands_ids: list[int] | None = None
+
+
+@passages_api.route("/edit_key", method="PUT")
+@validate()
+def edit_key_api(body: EditKeyRequest):
+    # check if the user is admin and the key exist
+    key: PassageKey = PassageKey.query().get_or_404(body.id)
+    if key.event.createur.id != current_user.id:
+        return jsonify({"success": False, "error": "not allowed"})
+
+    key.name = body.name or key.name
+    if body.stands_ids is not None:
+        key.stands = (
+            Stand.query()
+            .filter(
+                Stand.id.in_(body.stands_ids),
+                Stand.chrono.is_(True),
+                Stand.parcours_version.has(
+                    ParcoursVersion.editions.any(Edition.id == key.edition_id)
+                ),
+            )
+            .all()
+        )
+
+    db.session.commit()
+    return jsonify({"success": True})
 
 
 @login_required
@@ -61,64 +159,6 @@ def dashboard(event_name: str, edition_name: str) -> str | Response:
     user = current_user
     event = Event.query().filter_by(name=event_name).first_or_404()
     edition = assert404(event.editions.filter_by(name=edition_name).first())
-    keys = PassageKey.query().filter_by(event=event, edition=edition).all()
-    if edition.edition_date > datetime.now():
-        # formulaire d'ajout
-        form: NewKeyForm | None = NewKeyForm()
-        for i, parcours in enumerate(edition.parcours_version):
-            choices: list[tuple[str, str]] = [("", "")] + [
-                (f"{s.id}", f"{s.parcours_version.name} - {s.name}")
-                for s in Stand.query()
-                .filter(
-                    Stand.parcours_version.has(ParcoursVersion.id == parcours.id),
-                    Stand.chrono.is_(True),
-                )
-                .all()
-            ]  # noqa: E712
-            if len(form.stands.entries) <= i:
-                form.stands.append_entry()
-            field = form.stands.entries[i]
-            field.choices = choices
-            field.label.text = f"parcours {parcours.name}"
-
-        if form.validate_on_submit():
-            if not edition.passage_keys.filter_by(name=form.name.data).first():
-                stands = [
-                    assert404(Stand.query().get(stand.data))
-                    for stand in form.stands
-                    if stand.data
-                ]
-                if len(stands) > 0:
-                    key_code = secrets.token_urlsafe(5)
-                    while PassageKey.query().filter_by(key=key_code).first():
-                        key_code = secrets.token_urlsafe(5)
-                    key = PassageKey(
-                        event_id=event.id,
-                        edition_id=edition.id,
-                        key=key_code,
-                        name=form.name.data,
-                    )
-                    key.stands = stands
-                    db.session.add(key)
-                    db.session.commit()
-
-                    return redirect(
-                        url_for(
-                            "admin.editions.passages.dashboard",
-                            event_name=event.name,
-                            edition_name=edition.name,
-                        )
-                    )
-                else:
-                    form.stands[0].errors = list(form.stands.errors) + [
-                        "vous devez au moins selectionner un stand."
-                    ]
-            else:
-                form.name.errors = list(form.name.errors) + [
-                    "vous utiliser déjà ce nom."
-                ]
-    else:
-        form = None
 
     passages = (
         Passage.query().filter(Passage.key.has(PassageKey.edition == edition)).all()
@@ -130,9 +170,7 @@ def dashboard(event_name: str, edition_name: str) -> str | Response:
         edition_data=edition,
         user_data=user,
         now=datetime.now(),
-        keys=keys,
         passages=passages,
-        form=form,
         event_modif=True,
         edition_sidebar=True,
     )

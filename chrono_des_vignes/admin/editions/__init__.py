@@ -2,7 +2,7 @@
 # Chrono Des Vignes
 # a timing system for sports events
 #
-# Copyright © 2025-2026 Romain Maurer
+# Copyright © 2024-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
 #
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -18,15 +18,14 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 """
 
-from typing import cast
-
-
-from flask import Blueprint, flash, render_template, redirect
+from typing import cast, TypedDict
+from flask import Blueprint, flash, jsonify, render_template, redirect
 from chrono_des_vignes import admin_required, db, set_route, lang_url_for as url_for
 from chrono_des_vignes.admin.editions.form import Edition_form
 from flask_login import login_required, current_user
+from chrono_des_vignes.api import ApiBlueprint
 from chrono_des_vignes.lib import assert400, assert404
-from chrono_des_vignes.models import Event, Parcours, ParcoursVersion, Edition
+from chrono_des_vignes.models import Event, Parcours, ParcoursVersion, Edition, Stand
 from datetime import datetime
 from .dossard import dossard
 from .passages import passages
@@ -40,6 +39,59 @@ editions.register_blueprint(dossard)
 editions.register_blueprint(passages)
 editions.register_blueprint(parcours)
 editions.register_blueprint(result)
+
+edition_api = ApiBlueprint.admin("edition", version="v1")
+
+
+class StandData(TypedDict):
+    name: str
+    lat: float
+    lng: float
+    id: int
+
+
+class ParcoursData(TypedDict):
+    name: str
+    description: str
+    chrono_stands: list[StandData]
+
+
+class EditionData(TypedDict):
+    name: str
+    edition_date: datetime
+    description: str
+    first_inscription: datetime
+    last_inscription: datetime
+    rdv_lat: float
+    rdv_lng: float
+    parcours: list[ParcoursData]
+
+
+@edition_api.route("get_edition/<event_id>/<edition_id>")
+def get_edition(event_id: int, edition_id: int):
+    event = Event.query().filter_by(id=event_id).first_or_404()
+    edition = assert404(event.editions.filter_by(id=edition_id).first())
+    data = EditionData(
+        name=edition.name,
+        edition_date=edition.edition_date,
+        description=edition.description,
+        first_inscription=edition.first_inscription,
+        last_inscription=edition.last_inscription,
+        rdv_lat=edition.rdv_lat,
+        rdv_lng=edition.rdv_lng,
+        parcours=[],
+    )
+
+    for pv in edition.parcours_version:
+        parcours_data = ParcoursData(
+            name=pv.parcours.name, description=pv.parcours.description, chrono_stands=[]
+        )
+        for cs in pv.stands.filter(Stand.chrono.is_(True)).all():
+            stand_data = StandData(name=cs.name, lat=cs.lat, lng=cs.lng, id=cs.id)
+            parcours_data["chrono_stands"].append(stand_data)
+        data["parcours"].append(parcours_data)
+
+    return jsonify(data)
 
 
 @set_route(editions, "/event/<event_name>/editions", methods=["POST", "GET"])
@@ -154,9 +206,11 @@ def modify_edition_page(event_name: str, edition_name: str) -> str | Response:
     form.parcours.choices = [
         str((p.name, p.description))
         for p in event.parcours.filter(
-            or_(
-                ParcoursVersion.archived.is_(False),
-                ParcoursVersion.editions.any(Edition.id == edition.id),
+            Parcours.versions.any(
+                or_(
+                    ParcoursVersion.archived.is_(False),
+                    ParcoursVersion.editions.any(Edition.id == edition.id),
+                )
             )
         ).all()
     ]

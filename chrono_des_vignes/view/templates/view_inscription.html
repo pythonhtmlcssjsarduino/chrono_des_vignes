@@ -2,7 +2,7 @@
  * Chrono Des Vignes
  * a timing system for sports events
  * 
- * Copyright © 2024-2025 Romain Maurer
+ * Copyright © 2024-2026 Romain Maurer
  * This file is part of Chrono Des Vignes
  * 
  * Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -61,8 +61,8 @@
       </div>
       <div class="col-sm-9">
         <a class="text-decoration-none link-dark"
-          href="{{ url_for('view.view_parcours_page', event_name=inscription.event.name, parcours_name=inscription.parcours.name) }}">
-          <p class="text-muted mb-0">{{inscription.parcours.name}}</p>
+          href="{{ url_for('view.view_parcours_page', event_name=inscription.event.name, parcours_name=inscription.parcours_version.parcours.name, parcours_version_name=inscription.parcours_version.name) }}">
+          <p class="text-muted mb-0">{{inscription.parcours_version.parcours.name}}</p>
         </a>
       </div>
     </div>
@@ -159,7 +159,7 @@
     {% endif %}
   </div>
 </div>
-<div style="height: 450px">
+{#<div style="height: 450px">
   <iframe id="map" class="w-100 h-100" srcdoc=' {% include "view_map_iframe.html" %} ' frameborder="0"></iframe>
-</div>
+</div> #}
 {% endblock content %}

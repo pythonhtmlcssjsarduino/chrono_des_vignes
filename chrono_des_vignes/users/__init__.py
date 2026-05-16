@@ -2,7 +2,7 @@
 # Chrono Des Vignes
 # a timing system for sports events
 #
-# Copyright © 2024-2025 Romain Maurer
+# Copyright © 2024-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
 #
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -24,6 +24,7 @@ from flask_login import login_required, current_user, login_user, logout_user
 from chrono_des_vignes.lib import assert400, assert404
 from chrono_des_vignes.models import (
     InscriptionData,
+    Parcours,
     User,
     Event,
     ParcoursVersion,
@@ -41,6 +42,7 @@ from .form import (
 from chrono_des_vignes import db, set_route, lang_url_for as url_for, bcrypt
 from sqlalchemy import and_, not_
 from datetime import datetime, time
+from ast import literal_eval
 import string
 import secrets
 import os
@@ -146,21 +148,32 @@ def inscription_page(event_name: str, edition_name: str) -> str | Response:
     form: InscriptionConnectedForm | InscriptionForm
     if user:
         form = InscriptionConnectedForm()
-        choices = edition.parcours.filter(
+        choices = edition.parcours_version.filter(
             not_(
                 ParcoursVersion.inscriptions.any(
                     and_(Inscription.inscrit == user, Inscription.edition == edition)
                 )
             ),
-            ParcoursVersion.event == event,
-        ).all()  # type: ignore[no-untyped-call]
+            ParcoursVersion.parcours.has(Parcours.event == event),
+        ).all()
+        if len(choices) == 0:
+            flash(
+                _("you are already registered for all parcours in this edition"),
+                "warning",
+            )
+            return redirect(
+                url_for(
+                    "view.view_edition_page",
+                    event_name=event.name,
+                    edition_name=edition.name,
+                )
+            )
         form.parcours.choices = [str((p.name, p.description)) for p in choices]  # pyright: ignore[reportAttributeAccessIssue]
 
         if form.validate_on_submit():
             parcours = cast(list[str], assert400(form.parcours.data))
-            choices = event.parcours.filter(
-                ParcoursVersion.name.in_([eval(data)[0] for data in parcours])
-            ).all()  # type: ignore[union-attr]
+            selected_names = [literal_eval(data)[0] for data in parcours]
+            choices = event.parcours.filter(Parcours.name.in_(selected_names)).all()
 
             data = (
                 InscriptionData.query()
@@ -197,7 +210,9 @@ def inscription_page(event_name: str, edition_name: str) -> str | Response:
 
     else:
         form = InscriptionForm()
-        choices = edition.parcours
+        choices = edition.parcours_version.filter(
+            ParcoursVersion.parcours.has(Parcours.event == event)
+        ).all()
         form.parcours.choices = [str((p.name, p.description)) for p in choices]  # pyright: ignore[reportAttributeAccessIssue]
 
         if form.validate_on_submit():
@@ -223,9 +238,8 @@ def inscription_page(event_name: str, edition_name: str) -> str | Response:
             login_user(user)
             # print(user, form.parcours.data)
             parcours = cast(list[str], assert400(form.parcours.data))
-            choices = event.parcours.filter(
-                ParcoursVersion.name.in_([eval(data)[0] for data in parcours])
-            ).all()
+            selected_names = [literal_eval(data)[0] for data in parcours]
+            choices = event.parcours.filter(Parcours.name.in_(selected_names)).all()
 
             data = (
                 InscriptionData.query()

@@ -2,7 +2,7 @@
 # Chrono Des Vignes
 # a timing system for sports events
 #
-# Copyright © 2025-2026 Romain Maurer
+# Copyright © 2024-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
 #
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -26,6 +26,7 @@ from chrono_des_vignes.lib import assert400, assert404
 from chrono_des_vignes.models import (
     Event,
     InscriptionData,
+    Parcours,
     ParcoursVersion,
     Edition,
     Inscription,
@@ -58,8 +59,16 @@ def edition_dossards(event_name: str, edition_name: str) -> str | Response:
     user = current_user
 
     form = NewCoureurForm()
-    choices = edition.parcours.all()
-    form.parcours.choices = [str((p.name, p.description)) for p in choices]
+    choices = (
+        Parcours.query()
+        .filter(
+            Parcours.versions.any(
+                ParcoursVersion.editions.any(Edition.id == edition.id)
+            )
+        )
+        .all()
+    )
+    form.parcours.choices = [str((p.name, p.description)) for p in choices]  # pyright: ignore[reportAttributeAccessIssue]
 
     if form.validate_on_submit():
         users = (

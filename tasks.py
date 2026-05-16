@@ -9,24 +9,14 @@ from fnmatch import translate
 import os
 import tempfile
 from dotenv import dotenv_values, set_key
+import tomllib
 
-from invoke.exceptions import UnexpectedExit
-from invoke.runners import Promise
+# Le fichier doit être ouvert en mode binaire ('rb')
+with open("cdv.toml", "rb") as f:
+    config = tomllib.load(f)
 
 frontend_path = Path.cwd() / "front-end"
 loaders = "--loader:.css=css --loader:.png=file --loader:.svg=file"
-
-
-@task
-def dev(ctx: Context):
-    try:
-        ts: Promise = ctx.run("inv watch-ts", asynchronous=True, hide=True)  # pyright: ignore[reportAssignmentType]
-        serve: Promise = ctx.run("inv serve", asynchronous=True, hide=True)  # pyright: ignore[reportAssignmentType]
-        ic("serving and watching...")
-        ts.join()
-        serve.join()
-    except UnexpectedExit:
-        ic("exiting...")
 
 
 @task
@@ -52,7 +42,6 @@ def build_ts(ctx: Context, dev: bool = False):
         return
     with ctx.cd(frontend_path):
         ctx.run("node esbuild.config.mjs")
-        # ctx.run(f'npx esbuild {" ".join(map(lambda x:x.as_posix(), ts_files))} --bundle {'--sourcemap'if dev else '--minify'} --outdir=../chrono_des_vignes/static/js --splitting {loaders} --public-path=/static/js --format=esm')
 
 
 @task(pre=[check_node_modules, clean_js])  # pyright: ignore[reportUntypedFunctionDecorator]
@@ -63,7 +52,6 @@ def watch_ts(ctx: Context, split: bool = False):
         return
     with ctx.cd(frontend_path):
         ctx.run("node esbuild.config.mjs --watch")
-        # ctx.run(f'npx esbuild {" ".join(map(lambda x:x.as_posix(), ts_files))} --bundle --sourcemap --outdir=../chrono_des_vignes/static/js {'--splitting'if split else ''} {loaders} --public-path=/static/js --format=esm --watch')
 
 
 @task
@@ -76,21 +64,34 @@ def build_doc(ctx: Context, dev: bool = True):
     build_path = Path.cwd() / "chrono_des_vignes" / "static" / "doc"
     config_path = Path.cwd() / "front-end" / "mkdocs.yml"
     doc_dir = Path.cwd() / "front-end" / "docs"
-    with tempfile.NamedTemporaryFile() as f:
+
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".yml") as f:
         with config_path.open() as conf:
-            c = conf.read().replace("<<docs_dir>>", doc_dir.as_posix())
-            if not dev:
-                c = c.replace(
-                    "<<site_url>>", "https://chronodesvignes.eu.pythonanywhere.com"
-                )
-            else:
-                c = c.replace("<<site_url>>", "http://localhost:5000")
-            f.write(c.encode("utf-8"))
-            f.flush()
-        print(f.name)
-        with open(f.name) as fs:
+            content: str = conf.read()
+
+        # Remplacements clairement typés
+        replacements: dict[str, str] = {
+            "<<docs_dir>>": doc_dir.as_posix(),
+            "<<site_url>>": config["build"]["url"]
+            if not dev
+            else f"http://{config['dev']['host']}:{config['dev']['port']}",
+        }
+
+        # Appliquer tous les remplacements
+        for placeholder, value in replacements.items():
+            content = content.replace(placeholder, value)
+
+        f.write(content)
+        f.flush()
+        temp_file = f.name
+
+    try:
+        print(temp_file)
+        with open(temp_file) as fs:
             print(fs.read())
-        ctx.run(f"mkdocs build --config-file {f.name} --site-dir {build_path}")
+        ctx.run(f"mkdocs build --config-file {temp_file} --site-dir {build_path}")
+    finally:
+        os.unlink(temp_file)
 
 
 @task
@@ -161,7 +162,7 @@ def sync(ctx: Context, dev: bool = False):
     ctx.run("uv sync")
 
 
-@task(pre=[env, sync])  # pyright: ignore[reportUntypedFunctionDecorator, reportArgumentType]
+@task(pre=[env, sync])  # pyright: ignore[reportUntypedFunctionDecorator]
 def init(ctx: Context):
     ctx.run("pybabel compile -d chrono_des_vignes/translations -f")
 

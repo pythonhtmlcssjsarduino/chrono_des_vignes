@@ -2,7 +2,7 @@
 # Chrono Des Vignes
 # a timing system for sports events
 #
-# Copyright © 2025-2026 Romain Maurer
+# Copyright © 2024-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
 #
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -126,8 +126,10 @@ def view_edition_page(event_name: str, edition_name: str) -> str | Response:
     )
 
 
-@set_route(view, "/view/<event_name>/parcours/<parcours_name>")
-def view_parcours_page(event_name: str, parcours_name: str) -> str | Response:
+@set_route(view, "/view/<event_name>/parcours/<parcours_name>/<parcours_version_name>")
+def view_parcours_page(
+    event_name: str, parcours_name: str, parcours_version_name: str | None = None
+) -> str | Response:
     user_data = current_user if current_user.is_authenticated else None
     event = (
         Event.query()

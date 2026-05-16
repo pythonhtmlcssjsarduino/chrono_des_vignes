@@ -6,6 +6,7 @@ import postcssImport from 'postcss-import';
 import tailwindcss from '@tailwindcss/postcss';
 import fs from 'fs';
 import path from 'path'
+import esbuildApiRoutePlugin from './scripts/esbuild-api-route-plugin.mjs';
 
 async function transformCss(content, args){
     if (args.path.endsWith('.css')) {
@@ -44,6 +45,7 @@ const commun = {
         inlineImport({
             transform:transformCss,
         }),
+        esbuildApiRoutePlugin(),
         tailwindPlugin({
             
         }),

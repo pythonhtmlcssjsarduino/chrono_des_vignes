@@ -79,6 +79,7 @@ class SegmentData(TypedDict):
 
 class ParcoursData(TypedDict):
     id: int
+    event_id: int
     name: str
     description: str
     creation_date: datetime
@@ -157,6 +158,7 @@ def err(msg: str, op: dict[str, Any] | None = None, ids: dict[int, int] | None =
 
 class ParcoursDataPut(BaseModel):
     id: int
+    event_id: int
     name: str
     description: str
     creation_date: datetime
@@ -476,6 +478,7 @@ def get_parcours(event_id: int, parcours_version_id: int):
     )
     data: ParcoursData = {
         "id": parcours.id,
+        "event_id": parcours.event_id,
         "name": parcours.name,
         "description": parcours.description,
         "creation_date": parcours.creation_date,

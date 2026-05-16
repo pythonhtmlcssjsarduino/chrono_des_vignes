@@ -53,6 +53,7 @@ export class ParcoursData {
   private _parcoursModified: boolean = false
   constructor(
     readonly id: number,
+    readonly event_id: number,
     name: string,
     description: string,
     readonly creation_date: Date,
@@ -206,7 +207,7 @@ export class ParcoursData {
     if (this.parcoursModified) {
       // send the entire parcours
       this.changes = []
-      const resp = await fetch('/api/v1/parcours/update_parcours/1/3', {
+      const resp = await fetch(apiUrl('parcours', 'v1', `/update_parcours/${this.event_id}/${this.id}`), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -225,7 +226,7 @@ export class ParcoursData {
       const ops = [...this.changes]
       this.changes = []
       console.log('syncing', ops, this.parcoursModified);
-      const resp = await fetch('/api/v1/parcours/update_parcours/1/3', {
+      const resp = await fetch(apiUrl('parcours', 'v1', `/update_parcours/${this.event_id}/${this.id}`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -271,7 +272,7 @@ export class ParcoursData {
 
   static async fetch(event_id: number, parcours_id: number): Promise<ParcoursData> {
 
-    const url = `/api/v1/parcours/get_parcours/${event_id}/${parcours_id}`;
+    const url = apiUrl('parcours', 'v1', `/get_parcours/${event_id}/${parcours_id}`);
 
     const response = await fetch(url);
     if (!response.ok) {
@@ -283,11 +284,11 @@ export class ParcoursData {
   }
 
   static fromJson(data: any): ParcoursData {
-    return new ParcoursData(data.id, data.name, data.description, new Date(data.creation_date), data.stands.map((stand: any) => StandData.fromJson(stand)), data.segments.map((segment: any) => SegmentData.fromJson(segment)), data.modif, data.modif_allowed);
+    return new ParcoursData(data.id, data.event_id, data.name, data.description, new Date(data.creation_date), data.stands.map((stand: any) => StandData.fromJson(stand)), data.segments.map((segment: any) => SegmentData.fromJson(segment)), data.modif, data.modif_allowed);
   }
 
   static empty(): ParcoursData {
-    return new ParcoursData(0, "", "", new Date(), [], [], false, false);
+    return new ParcoursData(0, 0, "", "", new Date(), [], [], false, false);
   }
 
   createStand(lat: number, lng: number, chrono: boolean) {

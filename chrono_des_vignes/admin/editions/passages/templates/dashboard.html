@@ -2,7 +2,7 @@
  * Chrono Des Vignes
  * a timing system for sports events
  * 
- * Copyright © 2024-2025 Romain Maurer
+ * Copyright © 2024-2026 Romain Maurer
  * This file is part of Chrono Des Vignes
  * 
  * Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -19,52 +19,14 @@
 -->
 
 {% extends 'layout.html' %}
-{% from 'macro.html' import form_field, submit %}
 {% block import %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
+    <script type="module" src="{{ url_for('static', filename='js/Key_dashboard.js') }}"></script>
+    <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
 {% endblock %}
 {% block content %}
-    <div>
-        {% if keys.0 %}
-            <ul class="list-group list-group-light">
-                {% for key in keys %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <div class="fw-bold">{{ key.name }}</div>
-                            <ul class="text-muted list-group">
-                                {% for stand in key.stands.all() %}
-                                    <li class="list-group-item">
-                                        {{ _('admin.editions.passages.parcours') }}: {{ stand.parcours.name }}, {{ _('admin.editions.passages.stand') }}: {{ stand.name }}
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <h2 class="badge rounded-pill bg-info me-4">{{ key.key }}</h2>
-                            <a href="{{ url_for('admin.editions.passages.delete_key', event_name=event_data.name, edition_name=edition_data.name, key_id=key.id) }}">
-                                <i class="fa-regular fa-circle-xmark" style="color: #ff0000;"></i>
-                            </a>
-                        </div>
-                    </li>
-                {% endfor %}
-            </ul>
-        {% endif %}
-        {% if edition_data.edition_date > now %}
-            <hr>
-            <form action="" method="post">
-                <fieldset class="form-group">
-                    {{ form.hidden_tag() }}
-                    {{ form_field(form.name) }}
-                    <br>
-                    {% for stand in form.stands.entries %}
-                        {{ form_field(stand) }}
-                    {% endfor %}
-                    <br>
-                    {{ submit(form) }}
-                </fieldset>
-            </form>
-        {% endif %}
-    </div>
+    <h1>{{ _('admin.editions.passages.title') }}</h1>
+    <cdv-container eventId="{{ event_data.id }}" editionId="{{ edition_data.id }}"></cdv-container>
 
     <br><br><hr><br>
     <table class="table">
@@ -108,4 +70,4 @@
             }
         })
     </script>
-{% endblock content %}
+{% endblock %}

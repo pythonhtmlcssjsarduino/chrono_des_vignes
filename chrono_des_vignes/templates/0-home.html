@@ -2,7 +2,7 @@
  * Chrono Des Vignes
  * a timing system for sports events
  * 
- * Copyright © 2024-2025 Romain Maurer
+ * Copyright © 2024-2026 Romain Maurer
  * This file is part of Chrono Des Vignes
  * 
  * Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -76,7 +76,7 @@
                     {% for inscription in inscriptions  | sort(attribute="edition.edition_date") %}
                         <tr data-href="{{ url_for('view.view_inscription_page', inscription_id=inscription.id) }}">
                             <th scope="row">{{inscription.event.name}}</th>
-                            <th scope="row">{{inscription.parcours.name}}</th>
+                            <th scope="row">{{inscription.parcours_version.parcours.name}}</th>
                             <th scope="row">{{ inscription.edition.name }}</th>
                             <th scope="row">{{inscription.edition.edition_date.strftime('%d.%m.%Y')}}</th>
                         </tr>
