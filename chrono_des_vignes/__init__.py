@@ -62,6 +62,7 @@ from flask import (
 )
 from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass, Query
 from dotenv import load_dotenv
+from flask_sse import sse
 
 install()
 load_dotenv()
@@ -91,6 +92,12 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_recycle": 280,  # refresh connections every ~280s
     "pool_pre_ping": True,  # check connection before using it
 }
+
+# redis config
+app.config["REDIS_URL"] = f"redis://{os.getenv('redis_host')}:{os.getenv('redis_port')}"
+# sse blueprint
+app.register_blueprint(sse, url_prefix="/stream")
+
 
 DEFAULT_PROFIL_PIC: Final[str] = "icone.png"
 LANGAGES: Final[tuple[str, ...]] = ("de", "fr", "en")

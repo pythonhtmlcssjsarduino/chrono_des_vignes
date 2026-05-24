@@ -20,54 +20,12 @@
 
 {% extends 'layout.html' %}
 {% block import %}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
-    <script type="module" src="{{ url_for('static', filename='js/Key_dashboard.js') }}"></script>
-    <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+     <script type="module" src="{{ url_for('static', filename='js/Key_dashboard.js') }}"></script>
 {% endblock %}
 {% block content %}
     <h1>{{ _('admin.editions.passages.title') }}</h1>
     <cdv-container eventId="{{ event_data.id }}" editionId="{{ edition_data.id }}"></cdv-container>
 
-    <br><br><hr><br>
-    <table class="table">
-        <thead>
-            <tr>
-                <th scope="col">{{ _('admin.editions.passages.time') }}</th>
-                <th scope="col">{{ _('admin.editions.passages.user') }}</th>
-                <th scope="col">{{ _('admin.editions.passages.key') }}</th>
-                <th scope="col">{{ _('admin.editions.passages.stand') }}</th>
-            </tr>
-        </thead>
-        <tbody id="passage_table" class="table-group-divider table-divider-color">
-            {% for passage in passages | sort(attribute='time_stamp', reverse=true) %}
-                <tr>
-                    <th scope="row">{{ passage.time_stamp }}</th>
-                    <td>{{ passage.inscription.inscrit.username }} {% if passage.inscription.dossard %}- {{ passage.inscription.dossard }}{% endif %}</td>
-                    <td>{{ passage.key.name }}</td>
-                    <td>{{ passage.key.stands.filter_by(parcours=passage.inscription.parcours).first().name }}</td>
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    <script>
-        var socket = io('/dashboard', {auth: {'event_id': {{ event_data.id }}, 'edition_id': {{ edition_data.id }}} });
-        var passage_table = document.getElementById('passage_table')
-
-        socket.on('new_passage', function(data){
-            let html = `<tr>
-                <th scope="row">${data.time}</th>
-                <td>${data.user} ${data.dossard?'- '+data.dossard:''}</td>
-                <td>${data.key}</td>
-                <td>${data.stand}</td>
-            </tr>`
-            let node = document.createElement('tr')
-            node.innerHTML = html
-
-            if (passage_table.children.length == 0) {
-                passage_table.appendChild(node)
-            } else {
-                passage_table.insertBefore(node, passage_table.children[0])
-            }
-        })
-    </script>
+    <br><hr><br>
+    <passages-table eventId="{{ event_data.id }}" editionId="{{ edition_data.id }}"></passages-table>
 {% endblock %}

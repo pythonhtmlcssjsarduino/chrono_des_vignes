@@ -16,6 +16,7 @@ dependencies = [
     "flask-pydantic>=0.14.0",
     "flask-socketio>=5.5.1",
     "flask-sqlalchemy==3.1.1",
+    "flask-sse>=1.0.0",
     "flask-wtf==1.2.2",
     "folium>=0.19.4",
     "icecream>=2.1.3",

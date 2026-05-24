@@ -1,6 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { createNanoEvents, Emitter } from 'nanoevents';
+import { createNanoEvents } from 'nanoevents';
+import { DateTime } from 'luxon'
+import 'iconify-icon/dist/iconify-icon.js';
 
 // --- TYPES ---
 
@@ -516,11 +518,176 @@ class CdvContainer extends LitElement {
   }
 }
 
-export { CdvContainer, CdvKeyCard };
+
+// ? passages table
+
+interface PassageData {
+  id: number;
+  time_stamp: string;
+  inscription: {
+    id: number;
+    dossard: string
+    inscrit: {
+      id: number;
+      username: string;
+    }
+  };
+  key: {
+    id: number;
+    name: string;
+    key: string;
+  } | null;
+  stand: {
+    id: number;
+    name: string;
+  } | null;
+}
+
+@customElement('passages-table')
+class PassagesTable extends LitElement {
+  static styles = css`
+    :host {
+      display: block;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+      min-width: 600px; /* Force le scroll sur mobile si trop petit */
+    }
+
+    thead {
+      background-color: #f8f9fa;
+      border-bottom: 2px solid #dee2e6;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid #dee2e6;
+    }
+
+    th {
+      font-weight: 600;
+      color: #495057;
+      text-transform: uppercase;
+      font-size: 0.85rem;
+      letter-spacing: 0.5px;
+    }
+
+    tbody tr {
+      transition: background-color 0.2s ease;
+    }
+
+    tbody tr:hover {
+      background-color: #f1f3f5;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* Style pour la colonne temps (monospace pour alignement) */
+    th[scope="row"], td:first-child {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      color: #212529;
+      font-weight: 500;
+    }
+
+    /* Style pour l'état vide */
+    .empty-state {
+      text-align: center;
+      color: #868e96;
+      font-style: italic;
+      padding: 24px !important;
+      background-color: #fafafa;
+    }
+    
+    /* Couleur subtile pour les données manquantes */
+    .na-data {
+      color: #adb5bd;
+      font-size: 0.9em;
+    }
+  `;
+  @state() private passages: any[] = [];
+
+  @property({ type: Number }) eventId!: number
+  @property({ type: Number }) editionId!: number
+  private stream?: EventSource;
+
+  private async loadHistory() {
+    const response = await fetch(apiUrl('passages', 'v1', `/get_passages/${this.editionId}/${this.eventId}`));
+    const data = await response.json();
+    this.passages = data;
+  }
+
+  protected firstUpdated(): void {
+    this.loadHistory();
+
+    this.stream = new EventSource(`/stream?channel=passages_${this.editionId}_${this.eventId}`);
+    this.stream.addEventListener('new_passage', (event) => {
+      const data = JSON.parse(event.data);
+      console.log("Nouveau passage reçu via SSE:", event);
+      this.passages = [data, ...this.passages];
+    })
+
+    this.stream.onerror = (err) => {
+      console.error("EventSource failed:", err);
+    };
+  }
+
+
+  render() {
+    return html`
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Temps</th>
+              <th scope="col">Utilisateur</th>
+              <th scope="col">Clé</th>
+              <th scope="col">Point de passage</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${this.passages.length === 0 ? html`
+              <tr>
+                <td colspan="4" class="empty-state">Aucun passage enregistré.</td>
+              </tr>
+            ` : this.passages.map(passage => html`
+              <tr>
+                <th scope="row">${DateTime.fromISO(passage.time_stamp).toLocaleString(DateTime.DATETIME_SHORT)}</th>
+                <td>
+                  ${passage.inscription.inscrit.username} 
+                  ${passage.inscription.dossard ? html`<span style="color: #666; font-weight: normal;">&nbsp;− ${passage.inscription.dossard}</span>` : ''}
+                </td>
+                <td>${passage.key ? passage.key.name : html`<span class="na-data">N/A</span>`}</td>
+                <td>${passage.stand ? passage.stand.name : html`<span class="na-data">N/A</span>`}</td>
+              </tr>
+            `)}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+}
+
+
+export { CdvContainer, CdvKeyCard, PassagesTable };
 
 declare global {
   interface HTMLElementTagNameMap {
     "cdv-key-card": CdvKeyCard;
     "cdv-container": CdvContainer;
+    "passages-table": PassagesTable;
   }
 }

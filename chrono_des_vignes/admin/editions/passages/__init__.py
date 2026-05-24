@@ -18,37 +18,43 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 """
 
-from flask import Blueprint, jsonify, redirect, render_template, flash, request, session
+import random
+import secrets
+from datetime import datetime
+from typing import Any, TypedDict, cast
+
+from flask import Blueprint, jsonify, redirect, render_template, request, session
+from flask_babel import _
+from flask_login import current_user, login_required
+from flask_pydantic import validate
+from flask_socketio import emit, join_room, leave_room
+from flask_sse import sse
 from icecream import ic
+from pydantic import BaseModel
+from werkzeug.wrappers.response import Response
+
 from chrono_des_vignes import (
     admin_required,
     db,
     set_route,
-    lang_url_for as url_for,
     socketio,
+)
+from chrono_des_vignes import (
+    lang_url_for as url_for,
 )
 from chrono_des_vignes.api import ApiBlueprint
 from chrono_des_vignes.lib import assert404, calc_points_dist
-from flask_login import login_required, current_user
 from chrono_des_vignes.models import (
-    Event,
     Edition,
-    PassageKey,
-    Stand,
+    Event,
+    Inscription,
     ParcoursVersion,
     Passage,
-    Inscription,
-    Trace,
+    PassageKey,
+    Stand,
 )
-from datetime import datetime
-from .form import NewKeyForm, ChronoLoginForm
-import secrets
-from flask_socketio import join_room, leave_room, emit
-from flask_babel import _
-from werkzeug.wrappers.response import Response
-from typing import Any, TypedDict, cast
-from pydantic import BaseModel
-from flask_pydantic import validate
+
+from .form import ChronoLoginForm
 
 passages = Blueprint("passages", __name__, template_folder="templates")
 passages_api = ApiBlueprint.admin("passages", version="v1")
@@ -148,6 +154,50 @@ def edit_key_api(body: EditKeyRequest):
     return jsonify({"success": True})
 
 
+@passages_api.route("/get_passages/<int:edition_id>/<int:event_id>")
+def get_passages_api(edition_id: int, event_id: int):
+    event = Event.query().filter_by(id=event_id).first_or_404()
+    edition = assert404(event.editions.filter_by(id=edition_id).first())
+    passages = (
+        Passage.query()
+        .filter(Passage.key.has(PassageKey.edition == edition))
+        .order_by(Passage.time_stamp.desc())
+        .all()
+    )
+    return jsonify([p.SSE_data() for p in passages])
+
+
+# TODO remove this test route
+@set_route(passages, "/push")
+def push_passage():
+    sse.publish(
+        {
+            "id": random.randint(1, 1000),
+            "time_stamp": datetime.now(),
+            "inscription": {
+                "id": random.randint(1, 100),
+                "dossard": random.randint(1, 100),
+                "inscrit": {
+                    "id": random.randint(1, 100),
+                    "username": f"User{random.randint(1, 100)}",
+                },
+            },
+            "key": {
+                "id": random.randint(1, 100),
+                "name": f"Key{random.randint(1, 100)}",
+                "key": f"KEY-{random.randint(1000, 9999)}",
+            },
+            "stand": {
+                "id": random.randint(1, 100),
+                "name": f"Stand{random.randint(1, 100)}",
+            },
+        },
+        type="new_passage",
+        channel="passages_1_1",
+    )
+    return "ok"
+
+
 @login_required
 @admin_required
 @set_route(
@@ -160,56 +210,15 @@ def dashboard(event_name: str, edition_name: str) -> str | Response:
     event = Event.query().filter_by(name=event_name).first_or_404()
     edition = assert404(event.editions.filter_by(name=edition_name).first())
 
-    passages = (
-        Passage.query().filter(Passage.key.has(PassageKey.edition == edition)).all()
-    )
-
     return render_template(
         "dashboard.html",
         event_data=event,
         edition_data=edition,
         user_data=user,
         now=datetime.now(),
-        passages=passages,
         event_modif=True,
         edition_sidebar=True,
     )
-
-
-@login_required
-@admin_required
-@set_route(passages, "/event/<event_name>/editions/<edition_name>/delete/<key_id>")
-def delete_key(event_name: str, edition_name: str, key_id: int) -> str | Response:
-    key: PassageKey = PassageKey.query().filter_by(id=key_id).first_or_404()
-    if key.edition.edition_date <= datetime.now():
-        flash(_("flash.key_not_deleted_edition_passed"), "danger")
-        return redirect(
-            url_for(
-                "admin.editions.passages.dashboard",
-                event_name=event_name,
-                edition_name=edition_name,
-            )
-        )
-    elif key.passages.count() == 0:
-        db.session.delete(key)
-        db.session.commit()
-        flash(_("flash.key_deleted"), "success")
-        return redirect(
-            url_for(
-                "admin.editions.passages.dashboard",
-                event_name=event_name,
-                edition_name=edition_name,
-            )
-        )
-    else:
-        flash(_("flash.key_not_deleted"), "danger")
-        return redirect(
-            url_for(
-                "admin.editions.passages.dashboard",
-                event_name=key.event.name,
-                edition_name=key.edition.name,
-            )
-        )
 
 
 @set_route(passages, "/chrono", methods=["GET", "post"])
@@ -380,34 +389,6 @@ def chrono_page(key_code: str) -> str | Response:
     return render_template("chrono.html", user_data=user, key=key)
 
 
-@socketio.on("connect", namespace="/dashboard")
-def dashboard_connect(auth: dict[str, Any]) -> bool:
-    if (
-        current_user.is_authenticated
-        and auth.get("event_id")
-        and auth.get("edition_id")
-    ):
-        event = Event.query().get(auth["event_id"])
-        if not event or event.createur != current_user:
-            return False  # connection not allowed
-        edition = event.editions.filter_by(id=auth["edition_id"]).first()
-        if not edition:
-            return False  # connection not allowed
-
-        session["room"] = f"{event.id}-{edition.id}"
-        join_room(session["room"], request.sid)
-
-    else:
-        return False  # connection not allowed
-    return True
-
-
-@socketio.on("disconnect", namespace="/dashboard")
-def dashboard_disconnect() -> None:
-    leave_room(session["room"], request.sid)
-    del session["room"]
-
-
 @socketio.on("connect", namespace="/key")
 def key_connect(auth: dict[str, Any]) -> bool:
     if not auth.get("key", False):
@@ -520,18 +501,12 @@ def set_passage(data: dict[str, Any]) -> None:
     db.session.commit()
     db.session.refresh(passage)
 
-    emit(
-        "new_passage",
-        {
-            "time": str(pass_time),
-            "user": inscription.inscrit.username,
-            "dossard": inscription.dossard,
-            "key": key.name,
-            "stand": passage.get_stand().name,
-        },
-        namespace="/dashboard",
-        to=f"{passage.key.event.id}-{passage.key.edition.id}",
+    sse.publish(
+        passage.SSE_data(),
+        type="new_passage",
+        channel=f"passages_{key.edition.id}_{key.event.id}",
     )
+
     emit(
         "passage_response",
         {

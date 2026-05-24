@@ -30,7 +30,7 @@ from colour import Color
 from flask_login import UserMixin
 from datetime import datetime, timedelta
 from chrono_des_vignes.lib import assert400, calc_points_dist
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple, TypedDict, cast
 from collections.abc import Iterable, Iterator
 from markdown import markdown
 from sqlalchemy import (
@@ -744,6 +744,25 @@ class PassageKey(Model):
     __tablename__: str = "passage_key"
 
 
+class SSE_data_key(TypedDict):
+    id: int
+    name: str
+    key: str
+
+
+class SSE_data_stand(TypedDict):
+    id: int
+    name: str
+
+
+class SSE_data(TypedDict):
+    id: int
+    time_stamp: datetime
+    inscription: dict[str, Any]
+    key: SSE_data_key | None
+    stand: SSE_data_stand | None
+
+
 class Passage(Model):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
     time_stamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -771,6 +790,30 @@ class Passage(Model):
             if stand is None:
                 stand = self.inscription.parcours_version.start
         return stand
+
+    def SSE_data(self) -> SSE_data:
+        return {
+            "id": self.id,
+            "time_stamp": self.time_stamp,
+            "inscription": {
+                "id": self.inscription.id,
+                "dossard": self.inscription.dossard,
+                "inscrit": {
+                    "id": self.inscription.inscrit.id,
+                    "username": self.inscription.inscrit.username,
+                },
+            },
+            "key": {
+                "id": key.id,
+                "name": key.name,
+                "key": key.key,
+            }
+            if (key := self.key) is not None
+            else None,
+            "stand": {"id": stand.id, "name": stand.name}
+            if (stand := self.get_stand())
+            else None,
+        }
 
 
 class InscriptionData(Model):
