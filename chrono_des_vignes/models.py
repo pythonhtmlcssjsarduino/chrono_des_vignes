@@ -785,7 +785,7 @@ class Passage(Model):
             stand = self.inscription.parcours_version.start
         else:
             stand = self.key.stands.filter_by(
-                parcours=self.inscription.parcours_version
+                parcours_version=self.inscription.parcours_version
             ).first()
             if stand is None:
                 stand = self.inscription.parcours_version.start

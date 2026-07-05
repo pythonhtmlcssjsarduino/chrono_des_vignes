@@ -19,10 +19,11 @@
 """
 
 from ast import literal_eval
-from flask import Blueprint, flash, render_template, redirect, url_for, send_file, abort
+
+from flask import Blueprint, flash, render_template, redirect, url_for, send_file
 from chrono_des_vignes import admin_required, db, set_route, socketio
 from flask_login import login_required, current_user
-from chrono_des_vignes.lib import assert400, assert404
+from chrono_des_vignes.lib import assert404
 from chrono_des_vignes.models import (
     Event,
     InscriptionData,
@@ -32,14 +33,12 @@ from chrono_des_vignes.models import (
     Inscription,
     User,
 )
-from datetime import datetime, time
+from datetime import datetime
 from xlsxwriter import Workbook
 from io import BytesIO
 from flask_babel import _
-from chrono_des_vignes.custom_validators import DataRequired, DbLength, Email
 from .form import NewCoureurForm, ValidateNewCoureurForm
 from sqlalchemy import func, and_, or_, not_
-from wtforms.validators import Optional
 from werkzeug.wrappers import Response
 from typing import Any, cast
 
@@ -132,7 +131,11 @@ def validate_new_user(event_name: str, edition_name: str) -> str | Response:
         user = User.query().get_or_404(form.user_id.data)
 
         choices = event.parcours.filter(
-            ParcoursVersion.name.in_([eval(data)[0] for data in form.parcours.data]),
+            ParcoursVersion.parcours.has(
+                Parcours.name.in_(
+                    [literal_eval(data)[0] for data in form.parcours.data]  # pyright: ignore[reportOptionalIterable]
+                )
+            ),
             not_(ParcoursVersion.inscriptions.any(Inscription.user_id == user.id)),
         ).all()
 
@@ -210,13 +213,13 @@ def dossard_disconnect() -> None:
 
 
 @socketio.on("change_dossard", namespace="/dossard")
-def change_dossard(data: dict[str, Any]) -> Any:  # pyright: ignore[reportExplicitAny, reportAny]
+def change_dossard(data: dict[str, Any]) -> Any:  # pyright: ignore[reportAny]
     inscription = Inscription.query().get(data["inscription_id"])
     if (
         not inscription
-        and isinstance(data["new_dossard"], int)
-        and not current_user.is_authenticated
-        and inscription.event.createur == current_user
+        or not isinstance(data["new_dossard"], int)
+        or not current_user.is_authenticated
+        or inscription.event.createur != current_user
     ):
         return False
     if (
@@ -325,7 +328,7 @@ def export_dossard(event_name: str, edition_name: str) -> Response:
             inscription.inscrit.phone,
             inscription.inscrit.datenaiss,
             inscription.inscrit.username,
-            inscription.parcours.name,
+            inscription.parcours_version.name,
             inscription.edition.edition_date,
             inscription.edition.name,
             inscription.event.name,
@@ -352,4 +355,4 @@ def export_dossard(event_name: str, edition_name: str) -> Response:
     workbook.close()
 
     buffer.seek(0)
-    return send_file(buffer, download_name="dossard.xlsx", as_attachment=True)  # type: ignore
+    return send_file(buffer, download_name="dossard.xlsx", as_attachment=True)

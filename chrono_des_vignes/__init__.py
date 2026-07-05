@@ -70,7 +70,9 @@ load_dotenv()
 # met la langue en francais pour le formatage des dates
 locale.setlocale(locale.LC_TIME, "")
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+)
 app.subdomain_matching = True
 app.config["SERVER_NAME"] = os.getenv("SERVER_NAME")
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")

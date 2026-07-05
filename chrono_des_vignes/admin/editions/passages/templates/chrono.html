@@ -2,7 +2,7 @@
  * Chrono Des Vignes
  * a timing system for sports events
  * 
- * Copyright © 2024-2025 Romain Maurer
+ * Copyright © 2024-2026 Romain Maurer
  * This file is part of Chrono Des Vignes
  * 
  * Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -20,6 +20,13 @@
 
 {% extends 'layout.html' %}
 {% block import %}
+    <script type="module" src="{{ url_for('static', filename='js/Chrono_page.js') }}"></script>
+{% endblock %}
+{% block content %}
+    <timing-page key="{{ key.key }}"></timing-page>
+{% endblock content %}
+{#
+{% block import %}
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
 {% endblock %}
 {% block content %}
@@ -28,7 +35,7 @@
         <p>{{ _('admin.editions.passages.événement') }}: {{ key.event.name }}</p>
         <ul class="list-group">
             {% for stand in key.stands.all() %}
-                <li class="list-group-item">{{ _('admin.editions.passages.stand') }}: {{ stand.name }}, {{ _('admin.editions.passages.parcours') }}: {{ stand.parcours.name }}</li>
+                <li class="list-group-item">{{ _('admin.editions.passages.stand') }}: {{ stand.name }}, {{ _('admin.editions.passages.parcours') }}: {{ stand.parcours_version.name }}</li>
             {% endfor %}
         </ul>
     </div>
@@ -289,4 +296,4 @@
             input.focus()
         </script>
     </div>
-{% endblock content %}
+{% endblock content %}#}

@@ -20,10 +20,10 @@
 
 import random
 import secrets
-from datetime import datetime
-from typing import Any, TypedDict, cast
+from datetime import datetime, timedelta
+from typing import Any, Literal, TypedDict, cast
 
-from flask import Blueprint, jsonify, redirect, render_template, request, session
+from flask import Blueprint, abort, jsonify, redirect, render_template, request, session
 from flask_babel import _
 from flask_login import current_user, login_required
 from flask_pydantic import validate
@@ -43,7 +43,7 @@ from chrono_des_vignes import (
     lang_url_for as url_for,
 )
 from chrono_des_vignes.api import ApiBlueprint
-from chrono_des_vignes.lib import assert404, calc_points_dist
+from chrono_des_vignes.lib import assert400, assert404, calc_points_dist
 from chrono_des_vignes.models import (
     Edition,
     Event,
@@ -58,6 +58,7 @@ from .form import ChronoLoginForm
 
 passages = Blueprint("passages", __name__, template_folder="templates")
 passages_api = ApiBlueprint.admin("passages", version="v1")
+chrono_api = ApiBlueprint("chrono", version="v1")
 
 
 @passages_api.route("/list_keys/<int:edition_id>/<int:event_id>")
@@ -165,6 +166,116 @@ def get_passages_api(edition_id: int, event_id: int):
         .all()
     )
     return jsonify([p.SSE_data() for p in passages])
+
+
+class TimingAction(BaseModel):
+    id: int
+    bib: int
+    timestamp: datetime
+    key: str
+    last_modified: datetime
+    status: Literal["pending", "synced", "error", "user", "alert"]
+    error_type: (
+        Literal["invalid_bib", "bib_not_started", "server", "duplicate"] | None
+    ) = None
+    error_message: str | None = None
+
+
+def sync_action(body: TimingAction):
+    key = PassageKey.query().filter_by(key=body.key).first()
+    if not key:
+        return abort(400, "invalid key")
+
+    action = body
+    action.last_modified = datetime.now()
+
+    # check bib state
+    inscription = (
+        Inscription.query()
+        .filter_by(dossard=action.bib, edition_id=key.edition.id)
+        .first()
+    )
+    if inscription is None:
+        action.status = "user"
+        action.error_type = "invalid_bib"
+        action.error_message = "numero de dossard invalid"
+        return action
+    elif not inscription.has_started():
+        action.status = "user"
+        action.error_type = "bib_not_started"
+        action.error_message = "numero de dossard pas partit"
+        return action
+    # check for duplicated record
+    recents = inscription.passages.filter(
+        Passage.time_stamp > action.timestamp - timedelta(seconds=2)
+    ).count()
+    if recents > 0:
+        action.status = "alert"
+        action.error_type = "duplicate"
+        action.error_message = "possible duplicata (dernier passage moins de 2s)"
+    else:
+        action.status = "synced"
+
+    if (passage := Passage.query().get(body.id)) is not None:
+        if key.passages.get(body.id) is None:
+            return abort(400, "passage assigned to another key")
+        # already existing passage
+
+        passage.time_stamp = action.timestamp
+        passage.inscription_id = inscription.id
+        db.session.commit()
+
+    else:
+        # create a new passage
+        if body.id > 0:
+            return abort(400, "newly created action should have neg id")
+        passage = Passage(
+            time_stamp=action.timestamp, key_id=key.id, inscription_id=inscription.id
+        )
+        db.session.add(passage)
+        db.session.commit()
+        db.session.refresh(passage)
+        action.id = passage.id
+
+    sse.publish(
+        passage.SSE_data(),
+        type="new_passage",
+        channel=f"passages_{key.edition.id}_{key.event.id}",
+    )
+
+    return action
+
+
+@chrono_api.route("/passages", method="PUT")
+@validate()
+def record_passage(body: TimingAction):
+
+    ic(body)
+    action = sync_action(body)
+    return jsonify({"success": True, "action": action.model_dump()})
+
+
+@chrono_api.route("/passages/<string:key_str>", method="GET")
+def get_passages(key_str: str):
+    key = PassageKey.query().filter_by(key=key_str).first_or_404()
+    passages = (
+        Passage.query()
+        .filter(Passage.key == key)
+        .order_by(Passage.time_stamp.desc())
+        .all()
+    )
+
+    def format(passage: Passage) -> TimingAction:
+        return TimingAction(
+            id=passage.id,
+            bib=passage.inscription.dossard or -1,
+            timestamp=passage.time_stamp,
+            key=passage.key.key if passage.key else "",
+            last_modified=passage.time_stamp,
+            status="synced",
+        )
+
+    return jsonify([format(p).model_dump() for p in passages])
 
 
 # TODO remove this test route

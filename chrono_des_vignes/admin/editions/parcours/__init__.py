@@ -273,17 +273,7 @@ def view(event_name: str, edition_name: str) -> str | Response:
     event = Event.query().filter_by(name=event_name).first_or_404()
     edition = assert404(event.editions.filter_by(name=edition_name).first())
 
-    parcours = edition.parcours.all()
-
-    if 0 and edition.edition_date > datetime.now():
-        flash("l'edition n'as pas encore commencé", "warning")
-        return redirect(
-            url_for(
-                "admin.editions.modify_edition_page",
-                edition_name=edition.name,
-                event_name=event.name,
-            )
-        )
+    parcours = edition.parcours_version.all()
 
     return render_template(
         "edition_parcours.html",
