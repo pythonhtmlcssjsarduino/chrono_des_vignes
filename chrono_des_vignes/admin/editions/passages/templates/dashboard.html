@@ -20,12 +20,15 @@
 
 {% extends 'layout.html' %}
 {% block import %}
-     <script type="module" src="{{ url_for('static', filename='js/Key_dashboard.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/Key_dashboard.js') }}"></script>
 {% endblock %}
 {% block content %}
-    <h1>{{ _('admin.editions.passages.title') }}</h1>
-    <cdv-container eventId="{{ event_data.id }}" editionId="{{ edition_data.id }}"></cdv-container>
+    <div style="display: flex;flex-direction: column;height: 100%;">
+        <h1>{{ _('admin.editions.passages.title') }}</h1>
+        <cdv-container style="flex:5;" eventId="{{ event_data.id }}" editionId="{{ edition_data.id }}"></cdv-container>
 
-    <br><hr><br>
-    <passages-table eventId="{{ event_data.id }}" editionId="{{ edition_data.id }}"></passages-table>
+        <br>
+        <hr><br>
+        <passages-table style="flex:3;overflow:auto;" eventId="{{ event_data.id }}" editionId="{{ edition_data.id }}"></passages-table>
+    </div>
 {% endblock %}

@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { createNanoEvents } from 'nanoevents';
 import { DateTime } from 'luxon'
-import 'iconify-icon/dist/iconify-icon.js';
+import 'iconify-icon';
 
 // --- TYPES ---
 
