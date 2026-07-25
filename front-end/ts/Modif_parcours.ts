@@ -2,14 +2,20 @@ import { html, render } from "lit";
 import "./map_ui";
 import { ParcoursData } from "./parcours_data.js";
 
-declare global {
-  interface Window {
-    event_id: number;
-    parcours_id: number;
-  }
+const div = document.getElementById('parcours')
+
+if (!div) {
+  throw new Error("#parcours div not found");
 }
-let data = await ParcoursData.fetch(window.event_id, window.parcours_id);
-(globalThis as any).data = data
+
+const event_id = parseInt(div.dataset.event_id || '')
+const parcours_id = parseInt(div.dataset.parcours_id || '')
+
+if (!event_id || !parcours_id) {
+  throw new Error("ids not found");
+}
+
+let data = await ParcoursData.fetch(event_id, parcours_id);
 
 let template = html`
     <parcours-map .data=${data} width="100%"></parcours-map>

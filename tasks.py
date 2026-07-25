@@ -1,15 +1,15 @@
-from shutil import rmtree
-from zipfile import ZIP_DEFLATED, ZipFile
-from icecream import ic
-from invoke.tasks import call, task
-from invoke.context import Context
-from pathlib import Path
-from re import compile, Pattern
-from fnmatch import translate
 import os
 import tempfile
-from dotenv import dotenv_values, set_key
 import tomllib
+from fnmatch import translate
+from pathlib import Path
+from re import Pattern, compile
+from shutil import rmtree
+from zipfile import ZIP_DEFLATED, ZipFile
+
+from icecream import ic
+from invoke.context import Context
+from invoke.tasks import call, task
 
 # Le fichier doit être ouvert en mode binaire ('rb')
 with open("cdv.toml", "rb") as f:
@@ -34,7 +34,7 @@ def clean_js(ctx: Context):
     rmtree(Path.cwd() / "chrono_des_vignes" / "static" / "js", ignore_errors=True)
 
 
-@task(pre=[check_node_modules, clean_js])  # pyright: ignore[reportUntypedFunctionDecorator]
+@task(pre=[check_node_modules, clean_js])
 def build_ts(ctx: Context, dev: bool = False):
     ts_files = list((frontend_path / "ts").glob("*.ts"))
     if len(ts_files) == 0:
@@ -44,7 +44,7 @@ def build_ts(ctx: Context, dev: bool = False):
         ctx.run("node esbuild.config.mjs")
 
 
-@task(pre=[check_node_modules, clean_js])  # pyright: ignore[reportUntypedFunctionDecorator]
+@task(pre=[check_node_modules, clean_js])
 def watch_ts(ctx: Context, split: bool = False):
     ts_files = list((frontend_path / "ts").glob("*.ts"))
     if len(ts_files) == 0:
@@ -101,7 +101,7 @@ def requirements(ctx: Context):
     )
 
 
-@task(pre=[build_doc, requirements, build_ts])  # pyright: ignore[reportUntypedFunctionDecorator]
+@task(pre=[call(build_doc, dev=False), requirements, build_ts])
 def release(ctx: Context, output: str = "release.zip"):
     output_file = Path(output).absolute()
     base_dir = Path.cwd() / "chrono_des_vignes"
@@ -121,40 +121,7 @@ def release(ctx: Context, output: str = "release.zip"):
             print(f"✔ Inclus : {path.relative_to(base_dir)}")
         # include the requirements.txt
         zipf.write("requirements.txt", "requirements.txt")
-
-
-@task
-def env(ctx: Context):
-    # Define your variables
-    default_env = {
-        "db_password": "",
-        "db_user": "",
-        "db_host": "",
-        "db_name": "",
-        "SERVER_NAME": "",
-        "SECRET_KEY": "",
-        "mail_host": '["", 587]',
-        "from_addr": "",
-        "mail_token": "",
-        "to_addrs": '[""]',
-    }
-    # Load existing .env file if it exists
-    env_file = ".env"
-    existing_env = dotenv_values(env_file) if os.path.exists(env_file) else {}
-
-    # Merge existing values with defaults (existing values take precedence)
-    env_vars = {**default_env, **existing_env}
-    for key in env_vars:
-        current_value = env_vars[key]
-        user_input = input(
-            f"Enter value for {key} (current: '{current_value}'): "
-        ).strip()
-
-        if user_input != "" or key not in existing_env:
-            set_key(env_file, key, user_input)
-            env_vars[key] = user_input
-
-    print(f".env file has been updated successfully at {os.path.abspath(env_file)}!")
+        zipf.write(".python-version", ".python-version")
 
 
 @task(post=[build_ts, call(build_doc, dev=True)])  # pyright: ignore[reportUntypedFunctionDecorator, reportArgumentType]
@@ -162,7 +129,7 @@ def sync(ctx: Context, dev: bool = False):
     ctx.run("uv sync")
 
 
-@task(pre=[env, sync])  # pyright: ignore[reportUntypedFunctionDecorator]
+@task(pre=[sync])
 def init(ctx: Context):
     ctx.run("pybabel compile -d chrono_des_vignes/translations -f")
 
@@ -182,7 +149,7 @@ def build_db(ctx: Context):
 def compile_patterns(patterns: list[str]):
     compiled: list[tuple[bool, Pattern[str]]] = []
     for p in patterns:
-        pat = Path(p[1:] if p.startswith("!") else p).as_posix()
+        pat = Path(p.removeprefix("!")).as_posix()
         regex = compile(translate(pat))
         compiled.append((p.startswith("!"), regex))
     return compiled

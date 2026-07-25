@@ -13,10 +13,7 @@ To get started with Chrono des Vignes, please follow these steps:
 1. install (if not already) [uv cli](https://docs.astral.sh/uv/#installation)
 1. install npm and node
 1. rebuild the venv, .env, db, doc, js, and translation with ```uv run inv init```
-1. Launch the server with the following command:
-    ```shell
-    uv run invoke serve
-    ```
+1. Launch the server with the following command: ```uv run invoke serve```
 
 ### migrate the db (if changed)
 ```

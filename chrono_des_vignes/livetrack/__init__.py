@@ -18,12 +18,14 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
-from flask import Blueprint, render_template
-from chrono_des_vignes import set_route
-from chrono_des_vignes.models import Inscription, Passage
-from chrono_des_vignes.lib import format_timedelta
 from typing import Any
+
+from flask import Blueprint, render_template
 from werkzeug.wrappers import Response
+
+from chrono_des_vignes import set_route
+from chrono_des_vignes.lib import format_timedelta
+from chrono_des_vignes.models import Inscription, Passage
 
 livetrack = Blueprint('livetrack', __name__, template_folder='templates')
 

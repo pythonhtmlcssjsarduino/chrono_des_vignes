@@ -19,23 +19,23 @@
 # or from my github https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes
 """
 
+from flask_babel import lazy_gettext as _
 from flask_wtf import FlaskForm
-
 from wtforms import (
-    StringField,
     DateTimeLocalField,
     FloatField,
+    StringField,
     SubmitField,
     TextAreaField,
 )
+
+from chrono_des_vignes.custom_field import MultiCheckboxFieldWithDescription
 from chrono_des_vignes.custom_validators import (
     DataRequired,
-    Length,
-    DateTimeNotPast,
     DateTimeBefore,
+    DateTimeNotPast,
+    Length,
 )
-from chrono_des_vignes.custom_field import MultiCheckboxFieldWithDescription
-from flask_babel import lazy_gettext as _
 
 
 class Edition_form(FlaskForm):

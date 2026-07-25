@@ -155,7 +155,12 @@
 			{
 				"text": "Generate a commit message based on the following diff. The commit message should be concise and descriptive, summarizing the changes made in the code. Use the imperative mood and avoid using personal pronouns. If the diff includes multiple changes, provide a summary of the most significant changes.; # Start with setup\r\n\r\n\r\nexample:\r\n\r\n\t\t\t\tchore: set up user profile feature scaffolding\r\n\r\n# Backend development\r\nfeat: add user profile model schema in MongoDB\r\nfeat: create GET \/api\/users\/:id endpoint\r\nfeat: create PUT \/api\/users\/:id endpoint for updates\r\ntest: add unit tests for user profile endpoints\r\n\r\n# Frontend development\r\nfeat: create UserProfile React component\r\nfeat: add profile edit form with validation\r\nstyle: format UserProfile component with Prettier\r\n\r\n# Integration\r\nfeat: connect profile component to API endpoints\r\nfix: resolve avatar upload issue in profile form\r\n\r\n# Bug fixes found during testing\r\nfix: handle null values in profile display\r\nfix: correct validation error messages\r\n\r\n# Polish\r\nrefactor: extract profile form into reusable component\r\ndocs: add component usage documentation\r\ntest: add integration tests for profile flow\r\n\r\n# Final touches\r\nstyle: apply consistent styling to profile page\\nchore: remove console.log statements\r\n\r\nFormat: <type>: <short summary>\r\n\r\nCommon Types:\r\n\r\n    feat - New features\r\n    fix - Bug fixes\r\n    refactor - Code restructuring\r\n    style - Formatting\r\n    docs - Documentation\r\n    test - Tests\r\n    chore - Maintenance\r\n\r\nRemember: Be clear, be consistent, be helpful to your future self and your team! \uD83C\uDF89"
 			}
-		]
+		],
+		"search.exclude": {
+			"**/.venv/**": true,
+			"**/static/js/**": true
+		},
+		"todo-genie.highlight": "tag",
 	},
 	"extensions": {
 		"recommendations": [
@@ -170,6 +175,7 @@
 			"tamasfe.even-better-toml",
 			"hongquan.dragon-jinja",
 			"jackolope.lit-analyzer-plugin",
+			"joygqz.todo-genie",
 		]
 	},
 	"launch": {

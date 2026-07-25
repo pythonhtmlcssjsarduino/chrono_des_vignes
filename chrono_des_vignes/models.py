@@ -20,36 +20,47 @@
 """
 
 from __future__ import annotations
-from html import escape
-from warnings import deprecated
-from flask import abort
-from sqlalchemy.orm import AppenderQuery, DynamicMapped, Mapper, mapped_column, Mapped
-from chrono_des_vignes import db, DEFAULT_PROFIL_PIC, Base
-from sqlalchemy_utils import ColorType as ColorType_sql_utils  # pyright: ignore[reportMissingTypeStubs]
-from colour import Color
-from flask_login import UserMixin
-from datetime import datetime, timedelta
-from chrono_des_vignes.lib import assert400, calc_points_dist
-from typing import Any, NamedTuple, TypedDict, cast
+
+from ast import literal_eval
 from collections.abc import Iterable, Iterator
+from datetime import datetime, timedelta
+from html import escape
+from typing import Any, Literal, NamedTuple, TypedDict, cast
+from warnings import deprecated
+
+from colour import Color
+from flask import abort
+from flask_login import UserMixin
 from markdown import markdown
 from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
     asc,
     desc,
     not_,
-    Table,
-    Integer,
-    ForeignKey,
-    DateTime,
-    String,
-    Boolean,
-    Text,
-    Float,
-    Column,
 )
-from sqlalchemy.orm import relationship
 from sqlalchemy.inspection import inspect
-from ast import literal_eval
+from sqlalchemy.orm import (
+    AppenderQuery,
+    DynamicMapped,
+    Mapped,
+    Mapper,
+    mapped_column,
+    relationship,
+)
+from sqlalchemy_utils import (
+    ColorType as ColorType_sql_utils,  # pyright: ignore[reportMissingTypeStubs]
+)
+
+from chrono_des_vignes import DEFAULT_PROFIL_PIC, Base, db
+from chrono_des_vignes.lib import assert400, calc_points_dist
 
 Model = Base
 
@@ -342,6 +353,22 @@ class ParcoursVersion(Model):
                 dist += e.get_dist()
         return dist_list
 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "parcours_id": self.parcours_id,
+            "creation_date": self.creation_date.isoformat(),
+            "description": self.description,
+            "version": self.version,
+            "archived": self.archived,
+            "stands": [stand.id for stand in self.stands],
+            "traces": [trace.id for trace in self.traces],
+            "inscriptions": [
+                inscription.to_dict() for inscription in self.inscriptions
+            ],
+        }
+
     # endregion
 
 
@@ -490,7 +517,7 @@ class Trace(Model):
         self._trace = str(sterilised_trace)
 
     def has_alt(self) -> bool:
-        return all((bool(point.alt) for point in self))
+        return all(bool(point.alt) for point in self)
 
     def get_dist(self) -> float:
         dist: float = 0
@@ -572,6 +599,31 @@ class Edition(Model):
     def description_html(self) -> str:
         return get_html_from_markdown(self.description)
 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "event_id": self.event_id,
+            "edition_date": self.edition_date.isoformat(),
+            "first_inscription": self.first_inscription.isoformat(),
+            "last_inscription": self.last_inscription.isoformat(),
+            "description": self.description,
+            "creation_date": self.creation_date.isoformat(),
+            "rdv_lat": self.rdv_lat,
+            "rdv_lng": self.rdv_lng,
+            "parcours_version": [p.to_dict() for p in self.parcours_version],
+        }
+
+
+STATUS_MAP: dict[str, str] = {
+    "pas partit": "pending",
+    "en cours": "running",
+    "arrivé": "finished",
+    "abandon": "abandoned",
+    "disqualifié": "disqualified",
+    "absent": "absent",
+}
+
 
 class Inscription(Model):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, init=False)
@@ -599,8 +651,10 @@ class Inscription(Model):
     passages: DynamicMapped[Passage] = relationship(
         "Passage", back_populates="inscription", lazy="dynamic", init=False
     )
-    end: Mapped[str | None] = mapped_column(
-        String(10), nullable=True, init=False
+
+    # todo work with enum instead of strings
+    end: Mapped[Literal["abandon", "disqual", "absent", "finish"] | None] = (
+        mapped_column(String(10), nullable=True, init=False)
     )  # abandon, disqual, absent, finish or None
 
     data_id: Mapped[int | None] = mapped_column(
@@ -709,6 +763,22 @@ class Inscription(Model):
         inscriptions = inscriptions.filter(Inscription.end == "finish")
         return inscriptions.count() + 1
 
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "first_name": self.inscrit.name,
+            "last_name": self.inscrit.lastname,
+            "bib_number": self.dossard,
+            "end": self.end,
+            "creation_date": self.creation_date.isoformat(),
+            "present": self.present,
+            "status": STATUS_MAP[self.status],
+            "passages": [
+                passage.SSE_data()
+                for passage in self.passages.order_by(Passage.time_stamp.asc()).all()
+            ],
+        }
+
     # endregion
 
 
@@ -761,6 +831,7 @@ class SSE_data(TypedDict):
     inscription: dict[str, Any]
     key: SSE_data_key | None
     stand: SSE_data_stand | None
+    parcours_id: int
 
 
 class Passage(Model):
@@ -795,6 +866,7 @@ class Passage(Model):
         return {
             "id": self.id,
             "time_stamp": self.time_stamp,
+            "parcours_id": self.inscription.parcours_version.id,
             "inscription": {
                 "id": self.inscription.id,
                 "dossard": self.inscription.dossard,

@@ -19,10 +19,11 @@
 # or from my github https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes
 """
 
+from flask_babel import lazy_gettext as _
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField
+
 from chrono_des_vignes.custom_validators import DataRequired
-from flask_babel import lazy_gettext as _
 
 
 class ChronoLoginForm(FlaskForm):

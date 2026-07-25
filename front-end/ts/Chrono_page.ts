@@ -9,8 +9,6 @@ import { DateTime } from 'luxon';
 import { BlackBoxLogService as BlackBoxLog } from './chrono_data/BlackBoxLog';
 import { LocalStorageService } from './chrono_data/storage-local.impl';
 
-(window as any).DateTime = DateTime
-
 @customElement('timing-page')
 export class TimingPage extends LitElement {
 
@@ -119,12 +117,10 @@ export class TimingPage extends LitElement {
       display: flex;
       flex-direction: column;
       border-right: 1px solid #ddd;
-      min-width: 410px;
-      max-width: 500px;
       background: #fff;
     }
     .right-pane {
-      flex: 2;
+      flex: 1;
       display: flex;
       flex-direction: column;
       background: #fafafa;

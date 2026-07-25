@@ -18,14 +18,15 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
-from typing import override
-from wtforms import validators
 from datetime import datetime
+from typing import override
 
-from chrono_des_vignes.models import get_column_max_length
-from chrono_des_vignes import Base, db
-from wtforms import StringField, DateTimeField
+from wtforms import DateTimeField, StringField, validators
 from wtforms.form import BaseForm
+
+from chrono_des_vignes import Base, db
+from chrono_des_vignes.models import get_column_max_length
+
 
 class Email(validators.Email):
     def __init__(self, message:str|None=None):

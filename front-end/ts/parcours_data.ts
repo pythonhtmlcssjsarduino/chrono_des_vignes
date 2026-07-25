@@ -221,6 +221,10 @@ export class ParcoursData {
       if (json.success) {
         this._parcoursModified = false
         this.updateIds(json.ids)
+      } else {
+        alert("Erreur lors de la synchronisation du parcours : " + json.error + "\nla page va être rechargée pour éviter des incohérences\nil se peut que vous perdiez des modifications non sauvegardées")
+        localStorage.setItem('parcours_data_error', JSON.stringify({ error: json, parcours: this.toJson() }))
+        window.location.reload()
       }
     } else if (this.changes.length != 0) {
       const ops = [...this.changes]
@@ -234,9 +238,13 @@ export class ParcoursData {
         body: JSON.stringify(ops),
       })
       const json = await resp.json();
-      console.log(json);
+      console.log(json)
+      if (!json.success) {
+        alert("Erreur lors de la synchronisation du parcours : " + json.error + "\nla page va être rechargée pour éviter des incohérences\nil se peut que vous perdiez des modifications non sauvegardées")
+        localStorage.setItem('parcours_data_error', JSON.stringify({ error: json, parcours: this.toJson() }))
+        window.location.reload()
+      }
     }
-
   }
   toJson(): any {
     return {
@@ -247,7 +255,8 @@ export class ParcoursData {
       "modif_allowed": this.modif_allowed,
       "name": this.name,
       "segments": this.segments.map(segment => segment.toJson()),
-      "stands": this.stands.map(stand => stand.toJson())
+      "stands": this.stands.map(stand => stand.toJson()),
+      "event_id": this.event_id
     }
   }
   toString(): string {

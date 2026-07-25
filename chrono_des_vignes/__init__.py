@@ -18,36 +18,22 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 """
 
-import json
+import sentry_sdk
 import locale
-import logging
-import os
+from collections.abc import Callable
 from datetime import date, datetime
 from functools import wraps
-from logging.handlers import SMTPHandler
 from typing import (
     Any,
-    Callable,
+    Final,
     Generic,
     ParamSpec,
     Self,
     TypeVar,
     cast,
-    Final,
     override,
 )
-from urllib.parse import quote
-from flask.json.provider import DefaultJSONProvider
-from flask.typing import ResponseReturnValue
-from flask_babel import Babel, _, gettext
-from flask_bcrypt import Bcrypt
-from flask_login import LoginManager, current_user, login_required
-from flask_migrate import Migrate
-from flask_socketio import SocketIO
-from flask_sqlalchemy import SQLAlchemy
-from icecream import install
-from werkzeug import exceptions
-from werkzeug.wrappers.response import Response
+
 from flask import (
     Blueprint,
     Flask,
@@ -60,12 +46,34 @@ from flask import (
     session,
     url_for,
 )
-from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass, Query
-from dotenv import load_dotenv
+from flask.json.provider import DefaultJSONProvider
+from flask.typing import ResponseReturnValue
+from flask_babel import Babel, _, gettext
+from flask_bcrypt import Bcrypt
+from flask_login import LoginManager, current_user, login_required
+from flask_migrate import Migrate
+from flask_socketio import SocketIO
+from flask_sqlalchemy import SQLAlchemy
 from flask_sse import sse
+from icecream import install
+from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass, Query
+from werkzeug import exceptions
+from werkzeug.wrappers.response import Response
+
+from .config import FlaskConfig, cdv_config
+
+if cdv_config.SENTRY_ENABLED:
+    sentry_sdk.init(
+        dsn=cdv_config.SENTRY_DNS,
+        traces_sample_rate=0.01,  # 1% of transactions — adjust to your needs
+        auto_session_tracking=False,  # GlitchTip does not support sessions
+        # enable_logs=True,  # Opt-in: send logs to GlitchTip (uses disk space)
+        release="0.1.0",
+        environment=cdv_config.SENTRY_ENVIRONMENT,
+    )
+
 
 install()
-load_dotenv()
 
 # met la langue en francais pour le formatage des dates
 locale.setlocale(locale.LC_TIME, "")
@@ -73,30 +81,9 @@ locale.setlocale(locale.LC_TIME, "")
 app = Flask(
     __name__,
 )
-app.subdomain_matching = True
-app.config["SERVER_NAME"] = os.getenv("SERVER_NAME")
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
-
-app.config["FLASK_PYDANTIC_VALIDATION_ERROR_RAISE"] = True
-
-password = quote(cast(str, os.environ.get("db_password")))
-username = os.environ.get("db_user")
-hostname = os.environ.get("db_host")
-databasename = os.environ.get("db_name")
-
-url = f"mysql+pymysql://{username}:{password}@{hostname}/{databasename}"
-app.config["SQLALCHEMY_DATABASE_URI"] = url
-app.config["BABEL_TRANSLATION_DIRECTORIES"] = f"{app.root_path}/translations"
+app.config.from_object(FlaskConfig)
 app.jinja_env.add_extension("jinja2.ext.loopcontrols")
-app.url_map.default_subdomain = ""
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_recycle": 280,  # refresh connections every ~280s
-    "pool_pre_ping": True,  # check connection before using it
-}
 
-# redis config
-app.config["REDIS_URL"] = f"redis://{os.getenv('redis_host')}:{os.getenv('redis_port')}"
 # sse blueprint
 app.register_blueprint(sse, url_prefix="/stream")
 
@@ -117,6 +104,7 @@ class CustomJSONProvider(DefaultJSONProvider):
 
 
 app.json = CustomJSONProvider(app)
+
 
 T = TypeVar("T")
 
@@ -155,80 +143,10 @@ socketio = SocketIO(app)
 
 bcrypt = Bcrypt(app)
 
+
 login_manager = LoginManager(app)
 login_manager.login_view = "users.login"
 login_manager.login_message_category = "info"
-
-# ? error report
-mail_host = cast(str, json.loads(cast(str, os.getenv("mail_host"))))
-from_addr = cast(str, os.getenv("from_addr"))
-mail_token = cast(str, os.getenv("mail_token"))
-to_addrs = cast(list[str], json.loads(cast(str, os.getenv("to_addrs"))))
-# ic(mail_host, from_addr, mail_token, to_addrs)
-
-
-class MailFormatter(logging.Formatter):
-    @override
-    def format(self, record: logging.LogRecord) -> str:
-        # region
-        try:
-            post_data = "\n\t".join(
-                [
-                    f'"{k}": "{v}"' if v else f'"{k}"'
-                    for k, v in request.get_json().items()  # pyright: ignore[reportAny]
-                ]
-            )
-        except:  # noqa: E722
-            post_data = str(request.get_data() if request.get_data() != b"" else "")
-        args = "\n\t".join(
-            [
-                f'"{k}": "{v}"' if v else f'"{k}"'
-                for k, v in request.args.to_dict().items()
-            ]
-        )
-        user = (
-            f"""\
-username:   {current_user.username}
-id:         {current_user.id}
-name:       {current_user.name}"""
-            if current_user.is_authenticated
-            else "anonymous"
-        )
-        message = f"""\
-an error occurred in the chrono des vignes:
-
-{record.message} - {record.levelname}
-it occured on the {self.formatTime(record, "%A, %d %B %Y %H:%M:%S")}
-[user]
-{user}
-
-[request]
-url:    {request.url}
-endpoint:{request.endpoint}
-route:  {request.url_rule}
-method: {request.method}
-args:   {args}
-post:   {post_data}
-
-[traceback]
-{record.exc_text}
-
-        """
-        return message
-        # endregion
-
-
-smtp_handeler = SMTPHandler(
-    mailhost=mail_host,
-    fromaddr=to_addrs[0],
-    toaddrs=to_addrs,
-    subject="server error",
-    credentials=(from_addr, mail_token),
-)
-smtp_handeler.setFormatter(MailFormatter())
-smtp_handeler.setLevel(logging.WARNING)
-
-app.logger.addHandler(smtp_handeler)
 
 # ? instansiate flask babel
 # if app.debug:
@@ -433,4 +351,4 @@ from .api import api_blueprint  # noqa: E402
 
 app.register_blueprint(api_blueprint)
 
-from chrono_des_vignes import routes  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
+from chrono_des_vignes import routes as routes  # noqa: E402

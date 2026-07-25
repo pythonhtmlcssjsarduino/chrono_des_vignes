@@ -18,11 +18,12 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
-from flask import Blueprint, render_template, Response
+from flask import Blueprint, Response, render_template
+from flask_babel import _
 from flask_login import current_user, login_required
+
 from chrono_des_vignes import admin_required, set_route
 from chrono_des_vignes.models import Event, User
-from flask_babel import _
 
 coureurs = Blueprint("coureurs", __name__, template_folder='templates')
 

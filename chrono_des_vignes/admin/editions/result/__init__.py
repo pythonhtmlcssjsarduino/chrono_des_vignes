@@ -18,22 +18,24 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 """
 
-from flask import Blueprint, render_template, send_file, request
-from flask_login import login_required, current_user
-from chrono_des_vignes import admin_required, set_route
-from chrono_des_vignes.lib import assert404
-from chrono_des_vignes.models import Event, Edition, ParcoursVersion, Inscription
 from datetime import datetime, timedelta
 from io import BytesIO
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4, portrait
-from reportlab.lib.units import cm
-from reportlab.lib import colors
-from reportlab.platypus import Table, TableStyle
-from xlsxwriter import Workbook
 from math import floor
 from typing import TypedDict, cast
+
+from flask import Blueprint, render_template, request, send_file
+from flask_login import current_user, login_required
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, portrait
+from reportlab.lib.units import cm
+from reportlab.pdfgen import canvas
+from reportlab.platypus import Table, TableStyle
 from werkzeug.wrappers import Response
+from xlsxwriter import Workbook
+
+from chrono_des_vignes import admin_required, set_route
+from chrono_des_vignes.lib import assert404
+from chrono_des_vignes.models import Edition, Event, Inscription, ParcoursVersion
 
 result = Blueprint("result", __name__, template_folder="templates")
 

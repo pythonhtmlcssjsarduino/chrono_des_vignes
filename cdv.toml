@@ -4,6 +4,4 @@ host = "localhost"
 
 [build]
 # url of the build website
-url = "http://localhost:5000"
-# directory where the build files are located
-directory = "dist"
+url = "https://www.chronodesvignes.ch"

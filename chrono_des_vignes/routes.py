@@ -18,15 +18,24 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
-from pathlib import Path
-from flask import make_response, render_template, request, redirect, send_from_directory, abort
-from chrono_des_vignes import app, LANGAGES, db, set_route
-from flask_login import current_user
-from chrono_des_vignes.models import Edition, Inscription, Event
-from sqlalchemy import and_
 from datetime import datetime
-from chrono_des_vignes.admin.form import NewEventForm
+from pathlib import Path
+
+from flask import (
+    make_response,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+)
+from flask_login import current_user
+from sqlalchemy import and_
 from werkzeug.wrappers.response import Response
+
+from chrono_des_vignes import LANGAGES, app, db, set_route
+from chrono_des_vignes.admin.form import NewEventForm
+from chrono_des_vignes.models import Edition, Event, Inscription
+
 
 @set_route(app, '/')
 def home()->str:

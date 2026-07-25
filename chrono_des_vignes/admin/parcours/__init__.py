@@ -21,11 +21,11 @@
 from ast import literal_eval
 from datetime import datetime
 from typing import Any, TypedDict, cast
-from flask_pydantic import validate
 
 from colour import Color
 from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
+from flask_pydantic import validate
 from icecream import ic
 from pydantic import BaseModel
 from werkzeug.wrappers.response import Response
@@ -52,7 +52,6 @@ from chrono_des_vignes.models import (
     Trace,
     get_column_max_length,
 )
-
 
 parcours_bp = Blueprint("parcours", __name__, template_folder="templates")
 # region api
@@ -539,7 +538,7 @@ def modify_parcours(event_name: str, parcours_name: str) -> str | Response:
         event.parcours.filter_by(name=parcours_name).first()
     ).last_version
     return render_template(
-        "parcours_dev.html",
+        "modify_parcours.html",
         user_data=current_user,
         event_data=event,
         parcours_data=parcours,

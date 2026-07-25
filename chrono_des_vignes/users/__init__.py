@@ -18,38 +18,48 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 """
 
-from typing import cast
-from flask import Blueprint, redirect, flash, render_template, request
-from flask_login import login_required, current_user, login_user, logout_user
-from chrono_des_vignes.lib import assert400, assert404
-from chrono_des_vignes.models import (
-    InscriptionData,
-    Parcours,
-    User,
-    Event,
-    ParcoursVersion,
-    Inscription,
-)
-from chrono_des_vignes import app, DEFAULT_PROFIL_PIC, PICTURE_SIZE
-from .form import (
-    Login_form,
-    Signup_form,
-    InscriptionConnectedForm,
-    InscriptionForm,
-    ModifyForm,
-    ModifyPwdForm,
-)
-from chrono_des_vignes import db, set_route, lang_url_for as url_for, bcrypt
-from sqlalchemy import and_, not_
-from datetime import datetime, time
-from ast import literal_eval
-import string
-import secrets
 import os
+import secrets
+import string
+from ast import literal_eval
+from datetime import datetime, time
+from typing import cast
+
+from flask import Blueprint, flash, redirect, render_template, request
 from flask_babel import _
+from flask_login import current_user, login_required, login_user, logout_user
 from PIL import Image
+from sqlalchemy import and_, not_
 from werkzeug.datastructures import FileStorage
 from werkzeug.wrappers import Response
+
+from chrono_des_vignes import (
+    DEFAULT_PROFIL_PIC,
+    PICTURE_SIZE,
+    app,
+    bcrypt,
+    db,
+    set_route,
+)
+from chrono_des_vignes import lang_url_for as url_for
+from chrono_des_vignes.lib import assert400, assert404
+from chrono_des_vignes.models import (
+    Event,
+    Inscription,
+    InscriptionData,
+    Parcours,
+    ParcoursVersion,
+    User,
+)
+
+from .form import (
+    InscriptionConnectedForm,
+    InscriptionForm,
+    Login_form,
+    ModifyForm,
+    ModifyPwdForm,
+    Signup_form,
+)
 
 alphabet = string.ascii_letters + string.digits
 

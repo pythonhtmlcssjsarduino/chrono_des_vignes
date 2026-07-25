@@ -19,17 +19,20 @@
 # or from my github https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes
 """
 
-from flask import Blueprint, render_template, flash, redirect
-from flask_login import login_required, current_user
-from icecream import ic
-from chrono_des_vignes import admin_required, set_route, db, lang_url_for as url_for
-from chrono_des_vignes.models import Event
-from .form import EventForm, NewEventForm
-from .editions import editions
-from .parcours import parcours_bp
-from .coureurs import coureurs
-from werkzeug.wrappers.response import Response
+from flask import Blueprint, flash, redirect, render_template
 from flask_babel import _
+from flask_login import current_user, login_required
+from icecream import ic
+from werkzeug.wrappers.response import Response
+
+from chrono_des_vignes import admin_required, db, set_route
+from chrono_des_vignes import lang_url_for as url_for
+from chrono_des_vignes.models import Event
+
+from .coureurs import coureurs
+from .editions import editions
+from .form import EventForm, NewEventForm
+from .parcours import parcours_bp
 
 admin = Blueprint("admin", __name__, template_folder="templates")
 admin.register_blueprint(parcours_bp)

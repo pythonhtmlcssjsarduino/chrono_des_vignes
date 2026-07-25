@@ -19,28 +19,30 @@
 """
 
 from ast import literal_eval
+from datetime import datetime
+from io import BytesIO
+from typing import Any, cast
 
-from flask import Blueprint, flash, render_template, redirect, url_for, send_file
+from flask import Blueprint, flash, redirect, render_template, send_file, url_for
+from flask_babel import _
+from flask_login import current_user, login_required
+from sqlalchemy import and_, func, not_, or_
+from werkzeug.wrappers import Response
+from xlsxwriter import Workbook
+
 from chrono_des_vignes import admin_required, db, set_route, socketio
-from flask_login import login_required, current_user
 from chrono_des_vignes.lib import assert404
 from chrono_des_vignes.models import (
+    Edition,
     Event,
+    Inscription,
     InscriptionData,
     Parcours,
     ParcoursVersion,
-    Edition,
-    Inscription,
     User,
 )
-from datetime import datetime
-from xlsxwriter import Workbook
-from io import BytesIO
-from flask_babel import _
+
 from .form import NewCoureurForm, ValidateNewCoureurForm
-from sqlalchemy import func, and_, or_, not_
-from werkzeug.wrappers import Response
-from typing import Any, cast
 
 dossard = Blueprint("dossard", __name__, template_folder="templates")
 

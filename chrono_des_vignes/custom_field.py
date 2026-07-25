@@ -19,10 +19,12 @@
 '''
 
 from collections.abc import Iterable
-from markupsafe import Markup
-from wtforms import widgets, SelectMultipleField, StringField, Field
-from wtforms.widgets import Input
 from typing import Any, cast
+
+from markupsafe import Markup
+from wtforms import Field, SelectMultipleField, StringField, widgets
+from wtforms.widgets import Input
+
 
 class BootstrapListWidget(widgets.ListWidget):
     def __call__(self, field: Field, **kwargs: Any)->Markup:

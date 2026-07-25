@@ -21,13 +21,11 @@
 import random
 import secrets
 from datetime import datetime, timedelta
-from typing import Any, Literal, TypedDict, cast
+from typing import Literal
 
-from flask import Blueprint, abort, jsonify, redirect, render_template, request, session
-from flask_babel import _
+from flask import Blueprint, abort, jsonify, redirect, render_template, request
 from flask_login import current_user, login_required
 from flask_pydantic import validate
-from flask_socketio import emit, join_room, leave_room
 from flask_sse import sse
 from icecream import ic
 from pydantic import BaseModel
@@ -37,13 +35,12 @@ from chrono_des_vignes import (
     admin_required,
     db,
     set_route,
-    socketio,
 )
 from chrono_des_vignes import (
     lang_url_for as url_for,
 )
 from chrono_des_vignes.api import ApiBlueprint
-from chrono_des_vignes.lib import assert400, assert404, calc_points_dist
+from chrono_des_vignes.lib import assert404
 from chrono_des_vignes.models import (
     Edition,
     Event,
@@ -242,6 +239,11 @@ def sync_action(body: TimingAction):
         type="new_passage",
         channel=f"passages_{key.edition.id}_{key.event.id}",
     )
+    sse.publish(
+        passage.SSE_data(),
+        type="new_passage",
+        channel=f"run_control_{key.edition.id}_{key.event.id}",
+    )
 
     return action
 
@@ -249,7 +251,6 @@ def sync_action(body: TimingAction):
 @chrono_api.route("/passages", method="PUT")
 @validate()
 def record_passage(body: TimingAction):
-
     ic(body)
     action = sync_action(body)
     return jsonify({"success": True, "action": action.model_dump()})
@@ -281,30 +282,36 @@ def get_passages(key_str: str):
 # TODO remove this test route
 @set_route(passages, "/push")
 def push_passage():
-    sse.publish(
-        {
-            "id": random.randint(1, 1000),
-            "time_stamp": datetime.now(),
-            "inscription": {
+    data = {
+        "id": random.randint(1, 1000),
+        "time_stamp": datetime.now(),
+        "inscription": {
+            "id": random.randint(1, 100),
+            "dossard": random.randint(1, 100),
+            "inscrit": {
                 "id": random.randint(1, 100),
-                "dossard": random.randint(1, 100),
-                "inscrit": {
-                    "id": random.randint(1, 100),
-                    "username": f"User{random.randint(1, 100)}",
-                },
-            },
-            "key": {
-                "id": random.randint(1, 100),
-                "name": f"Key{random.randint(1, 100)}",
-                "key": f"KEY-{random.randint(1000, 9999)}",
-            },
-            "stand": {
-                "id": random.randint(1, 100),
-                "name": f"Stand{random.randint(1, 100)}",
+                "username": f"User{random.randint(1, 100)}",
             },
         },
+        "key": {
+            "id": random.randint(1, 100),
+            "name": f"Key{random.randint(1, 100)}",
+            "key": f"KEY-{random.randint(1000, 9999)}",
+        },
+        "stand": {
+            "id": random.randint(1, 100),
+            "name": f"Stand{random.randint(1, 100)}",
+        },
+    }
+    sse.publish(
+        data,
         type="new_passage",
         channel="passages_1_1",
+    )
+    sse.publish(
+        data,
+        type="new_passage",
+        channel="run_control_1_1",
     )
     return "ok"
 
@@ -332,6 +339,14 @@ def dashboard(event_name: str, edition_name: str) -> str | Response:
     )
 
 
+@set_route(passages, "/chrono/<key_code>")
+def chrono_page(key_code: str) -> str | Response:
+    user = current_user if current_user.is_authenticated else None
+    key = PassageKey.query().filter_by(key=key_code).first_or_404()
+
+    return render_template("chrono.html", user_data=user, key=key)
+
+
 @set_route(passages, "/chrono", methods=["GET", "post"])
 def chrono_home() -> str | Response:
     user = current_user if current_user.is_authenticated else None
@@ -346,306 +361,3 @@ def chrono_home() -> str | Response:
             form.key.errors = list(form.key.errors) + ["cette clé n'est pas valable."]
 
     return render_template("chrono_home.html", user_data=user, form=form)
-
-
-def parcours_chrono_list_dist(parcours: ParcoursVersion, dist_stand: list[int]) -> None:
-    part_list: list[Stand] = []
-    dist_list: list[float] = []
-    start = parcours.start_stand
-    new_stand = start
-    last_point = None
-    dist: float = 0
-    # si aucun depart alors ne mettre aucun stand
-    if start:
-        part_list.append(start)
-        turn_nb = 0
-        while True:
-            if new_stand == start:
-                turn_nb += 1
-            old_stand = new_stand
-            # si l'ancien stand a une trace qui part d lui
-            trace = assert404(old_stand.start_trace.filter_by(turn_nb=turn_nb).first())
-            if trace:
-                new_stand = trace.end
-                dist += (
-                    calc_points_dist(
-                        new_stand.lat, new_stand.lng, last_point[0], last_point[1]
-                    )
-                    if last_point
-                    else 0.0
-                )
-                last_point = new_stand.lat, new_stand.lng
-
-                if new_stand.id == dist_stand[0]:
-                    dist_stand = dist_stand[1:]
-                    dist_list.append(dist)
-                    if len(dist_stand) == 0:
-                        break
-
-                dist += trace.get_dist()
-            else:
-                break
-
-
-class StandData(TypedDict):
-    stand: Stand | dict[str, Any]
-    dist: float
-    delta: str | None
-    success: bool | None
-    current: bool | None
-
-
-class PassageData(TypedDict):
-    dossard: int | None
-    name: str
-    time_stamp: datetime | float
-    parcours: list[StandData]
-
-
-def get_passage_data(passage: Passage, json: bool = False):
-    data: PassageData = {
-        "dossard": passage.inscription.dossard,
-        "name": passage.inscription.inscrit.name,
-        "time_stamp": passage.time_stamp
-        if not json
-        else passage.time_stamp.timestamp(),
-        "parcours": [],
-    }
-    ic(passage.inscription, passage, passage.id)
-
-    user_passages: list[Passage] = (
-        Passage.query()
-        .filter(
-            Passage.inscription == passage.inscription,
-            Passage.time_stamp <= passage.time_stamp,
-        )
-        .all()
-    )
-    if len(user_passages) > 0:
-        first_passage = user_passages[0]
-        current = False
-        for stand, dist in zip(
-            passage.inscription.parcours.iter_chrono_list(),
-            passage.inscription.parcours.get_chrono_dists(),
-        ):
-            if len(user_passages) > 0 and stand == user_passages[0].get_stand():
-                delta = user_passages[0].time_stamp - first_passage.time_stamp
-                days = delta.days
-                hours, remainder = divmod(delta.seconds, 3600)
-                minutes, seconds = divmod(remainder, 60)
-                delta = f"{f'{days} days, ' if days > 0 else ''}{hours:02}:{minutes:02}:{seconds:02}"
-                user_passages.pop(0)
-                success = True
-            elif len(user_passages) > 0:
-                delta = None
-                success = False
-            else:
-                if not current:
-                    current = True
-                    data["parcours"][-1]["current"] = True
-                success = None
-                delta = None
-
-            data["parcours"].append(
-                {
-                    "stand": stand if not json else {"name": stand.name},
-                    "dist": round(dist, 3),
-                    "delta": delta,
-                    "success": success,
-                    "current": False,
-                }
-            )
-        for p in user_passages:
-            success = None
-            delta = p.time_stamp - first_passage.time_stamp
-            days = delta.days
-            hours, remainder = divmod(delta.seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            delta = f"{f'{days} days, ' if days > 0 else ''}{hours:02}:{minutes:02}:{seconds:02}"
-            ic(p, p.get_stand(), p.key.stands.all(), p.inscription.parcours)  # noqa: F821
-            data["parcours"].append(
-                {
-                    "stand": p.get_stand()
-                    if not json
-                    else {"name": p.get_stand().name},
-                    "dist": None,
-                    "delta": delta,
-                    "success": success,
-                }
-            )
-        if not current:
-            data["parcours"][-1]["current"] = True
-    return data
-
-
-def get_key_passage_data(key: PassageKey, json: bool = False):
-    data: list[PassageData] = []
-    passage: Passage
-    for passage in (
-        Passage.query().filter_by(key=key).order_by(Passage.time_stamp.asc()).all()
-    ):
-        data.append(get_passage_data(passage, json=json))
-    return data
-
-
-@set_route(passages, "/chrono/<key_code>")
-def chrono_page(key_code: str) -> str | Response:
-    user = current_user if current_user.is_authenticated else None
-    key = PassageKey.query().filter_by(key=key_code).first_or_404()
-    # TODO uncomment this part
-    """ if key.edition.edition_date > datetime.now():
-        flash('l\'edition n\'est pas aujourd\'hui', 'warning')
-        return redirect(url_for("admin.editions.passages.chrono_home")) """
-
-    return render_template("chrono.html", user_data=user, key=key)
-
-
-@socketio.on("connect", namespace="/key")
-def key_connect(auth: dict[str, Any]) -> bool:
-    if not auth.get("key", False):
-        return False  # connection not allowed
-    session["room"] = auth["key"]
-    join_room(session["room"], request.sid)
-    return True
-
-
-@socketio.on("disconnect", namespace="/key")
-def key_disconnect() -> None:
-    leave_room(session["room"], request.sid)
-    del session["room"]
-
-
-@socketio.on("get_passages", namespace="/key")
-def get_passages_data():
-    key = PassageKey.query().filter_by(key=session["room"]).first()
-    if key:
-        return get_key_passage_data(key, json=True)
-
-
-@socketio.on("set_passage", namespace="/key")
-def set_passage(data: dict[str, Any]) -> None:
-    key = PassageKey.query().filter_by(key=session["room"]).first()
-    if not key:
-        emit(
-            "passage_response",
-            {
-                "success": False,
-                "saved": False,
-                "error": "not valide key",
-                "request": data,
-            },
-            to=session["room"],
-        )
-        return
-
-    inscription = (
-        Inscription.query()
-        .filter(
-            Inscription.dossard == cast(int, data["dossard"]),
-            Inscription.edition == key.edition,
-        )
-        .first()
-    )
-    if not inscription:
-        emit(
-            "passage_response",
-            {
-                "success": False,
-                "saved": False,
-                "error": "not valide dossard",
-                "request": data,
-            },
-            to=session["room"],
-        )
-        return
-    if inscription.passages.count() <= 0:
-        emit(
-            "passage_response",
-            {
-                "success": False,
-                "saved": False,
-                "error": "edition not started",
-                "request": data,
-            },
-            to=session["room"],
-        )
-        return
-
-    if inscription.end == "finish":
-        emit(
-            "passage_response",
-            {
-                "success": False,
-                "saved": False,
-                "error": "has already finish",
-                "request": data,
-            },
-            to=session["room"],
-        )
-        return
-    elif inscription.end == "abandon":
-        emit(
-            "passage_response",
-            {"success": False, "saved": False, "error": "as abandoné", "request": data},
-            to=session["room"],
-        )
-        return
-    elif inscription.end == "disqual":
-        emit(
-            "passage_response",
-            {
-                "success": False,
-                "saved": False,
-                "error": "is disqualified",
-                "request": data,
-            },
-            to=session["room"],
-        )
-        return
-
-    pass_time = datetime.fromtimestamp(cast(float, data["time"]) / 1000)
-
-    passage = Passage(
-        key_id=key.id, time_stamp=pass_time, inscription_id=inscription.id
-    )
-    db.session.add(passage)
-    db.session.commit()
-    db.session.refresh(passage)
-
-    sse.publish(
-        passage.SSE_data(),
-        type="new_passage",
-        channel=f"passages_{key.edition.id}_{key.event.id}",
-    )
-
-    emit(
-        "passage_response",
-        {
-            "success": True,
-            "request": data,
-            "passage": get_passage_data(passage, json=True),
-        },
-        to=session["room"],
-    )
-
-    first_passage = inscription.passages.order_by(Passage.time_stamp.asc()).first()
-    if not first_passage:
-        return
-    pass_data = get_passage_data(passage, json=True)
-    pass_data.update(
-        {
-            "started": True,
-            "parcours_id": inscription.parcours.id,
-            "start_time": first_passage.time_stamp.timestamp(),
-            "id": inscription.id,
-            "finish": inscription.has_finish(),
-            "all_right": inscription.has_all_right(),
-            "end": inscription.end,
-        }
-    )
-    emit(
-        "new_passage",
-        pass_data,
-        namespace="/edition/parcours",
-        to=f"edition-parcours-{inscription.event.id}-{inscription.edition.id}",
-    )

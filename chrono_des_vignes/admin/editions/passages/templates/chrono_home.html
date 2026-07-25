@@ -1,11 +1,181 @@
+<!--
+ * Chrono Des Vignes
+ * a timing system for sports events
+ * 
+ * Copyright © 2024-2026 Romain Maurer
+ * This file is part of Chrono Des Vignes
+ * 
+ * Chrono Des Vignes is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free Software Foundation,
+ * either version 3 of the License, or (at your option) any later version.
+ * 
+ * Chrono Des Vignes is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more fcdetails.
+ * You should have received a copy of the GNU General Public License along with Chrono des vignes.
+ * If not, see <https://www.gnu.org/licenses/>.
+ * 
+ * You may contact me at chrono-des-vignes@ikmail.com
+ * or from my github https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes
+-->
+
 {% extends 'layout.html' %}
 {% from 'macro.html' import form_field, submit %}
 {% block content %}
-    <form action="" method="post">
-        <fieldset class="form-group">
-            {{ form.hidden_tag() }}
-            {{ form_field(form.key) }}
-            {{ submit(form) }}
-        </fieldset>
-    </form>
+
+<style>
+  /* Style simple et propre */
+  .code-input-group {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 20px;
+  }
+
+  .code-label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+  }
+
+  .code-input {
+    width: 100%;
+    max-width: 250px;
+    padding: 10px 15px;
+    font-size: 1.2rem;
+    font-family: monospace; /* Pour bien aligner les caractères */
+    text-transform: uppercase; /* Sécurité visuelle supplémentaire */
+    border: 2px solid #ccc;
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.2s;
+    letter-spacing: 2px;
+  }
+
+  .code-input:focus {
+    border-color: #17a2b8; /* Couleur Infomaniak/Bootstrap info */
+    box-shadow: 0 0 0 3px rgba(23, 162, 184, 0.2);
+  }
+
+  .code-input.error {
+    border-color: #dc3545;
+  }
+  
+  .btn-simple {
+  display: inline-block;
+  padding: 10px 20px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  background-color: #17a2b8; /* Même bleu que ta navbar */
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  text-decoration: none;
+  text-align: center;
+}
+
+.btn-simple:hover {
+  background-color: #138496; /* Version plus foncée au survol */
+}
+
+.btn-simple:active {
+  transform: scale(0.98); /* Petit effet de clic */
+}
+
+.btn-simple:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(23, 162, 184, 0.4);
+}
+
+/* Variante désactivée */
+.btn-simple:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+</style>
+    
+<div class="code-input-group">
+  <label for="key" class="code-label">Clé</label>
+  <input 
+    type="text" 
+    id="key" 
+    class="code-input"
+    placeholder="XXX-XXX-XXX"
+    maxlength="11"
+    autocomplete="off"
+  >
+  <br>
+  <button type="button" class="btn-simple">
+    Valider
+</button>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const input = document.getElementById('key');
+    input.focus(); // Met le focus sur l'input dès le chargement de la page
+    const btn = document.querySelector('.btn-simple');
+
+    btn.addEventListener('click', function() {
+      const code = input.value.trim();
+      if (code.length === 11) { // Vérifie que le code est complet
+        window.location.href = `/chrono/${code}`;
+      } else {
+        input.classList.add('error');
+      }
+    });
+
+    //enter on input click btn
+    input.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        btn.click();
+      }
+    });
+
+    input.addEventListener('input', function(e) {
+      // 1. Récupérer la valeur et tout transformer en majuscules
+      let val = e.target.value.toUpperCase();
+
+      // 2. Supprimer tout ce qui n'est PAS une lettre (A-Z)
+      // Cela retire automatiquement les tirets existants, les espaces, les chiffres, etc.
+      val = val.replace(/[^A-Z]/g, '');
+
+      // 3. Limiter à 8 lettres maximum (pour avoir 3-3-2 ou 3-3-3 selon ton besoin)
+      // Ici on vise XXX-XXX-XXX donc 9 lettres. Ajuste selon besoin.
+      // Ton exemple disait XXX-XXX-XXX (9 lettres).
+      if (val.length > 9) {
+        val = val.substring(0, 9);
+      }
+
+      // 4. Réinsérer les tirets tous les 3 caractères
+      const part1 = val.substring(0, 3);
+      const part2 = val.substring(3, 6);
+      const part3 = val.substring(6, 9);
+
+      let formatted = part1;
+      if (part2) formatted += '-' + part2;
+      if (part3) formatted += '-' + part3;
+
+      // 5. Mettre à jour la valeur
+      e.target.value = formatted;
+      
+      // Optionnel : Retirer la classe erreur si tout est bon
+      e.target.classList.remove('error');
+    });
+
+    // Empêcher le collage de contenu invalide (nettoyage immédiat)
+    input.addEventListener('paste', function(e) {
+      // L'événement 'input' gérera le nettoyage, mais on peut forcer le focus
+      setTimeout(() => {
+        // Déclenche virtuellement l'input si le paste n'a pas bien réagi
+        const event = new Event('input', { bubbles: true });
+        this.dispatchEvent(event);
+      }, 10);
+    });
+  });
+</script>
+
 {% endblock content %}

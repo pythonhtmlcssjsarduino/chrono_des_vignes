@@ -18,15 +18,17 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
-from flask_wtf import FlaskForm
-from wtforms.fields import TextAreaField
-from chrono_des_vignes.models import User
-from wtforms import StringField, PasswordField, SubmitField, EmailField, DateField
-from flask_wtf.file import FileField, FileAllowed
-from chrono_des_vignes.custom_validators import DataRequired, EqualTo, DbLength, Email
-from chrono_des_vignes.custom_field import MultiCheckboxFieldWithDescription
 from flask_babel import lazy_gettext as _
+from flask_wtf import FlaskForm
+from flask_wtf.file import FileAllowed, FileField
+from wtforms import DateField, EmailField, PasswordField, StringField, SubmitField
+from wtforms.fields import TextAreaField
 from wtforms.validators import Optional
+
+from chrono_des_vignes.custom_field import MultiCheckboxFieldWithDescription
+from chrono_des_vignes.custom_validators import DataRequired, DbLength, Email, EqualTo
+from chrono_des_vignes.models import User
+
 
 class Login_form(FlaskForm):
     username: StringField = StringField(_('form.username'), validators=[

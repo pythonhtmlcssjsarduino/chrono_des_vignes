@@ -20,12 +20,13 @@
 """
 
 import re
-from flask import abort
-import requests
-from math import acos, sin, radians, cos
+from datetime import datetime, timedelta
+from math import acos, cos, radians, sin
 from time import time
-from datetime import timedelta, datetime
 from urllib.parse import quote
+
+import requests
+from flask import abort
 
 
 def assert404[T](val: T | None, msg: str | None = None) -> T:
@@ -86,11 +87,11 @@ def get_points_elevation(points: list[tuple[float, float]]) -> list[dict[str, fl
     url = "https://api.open-elevation.com/api/v1/lookup"
     try:
         response = requests.post(url, json=data, timeout=1)
-    except requests.exceptions.ReadTimeout as e:
+    except requests.exceptions.ReadTimeout:
         # ic(e)
         # ic(time() - start, 'get_points_elevation')
         pass
-    except Exception as e:
+    except Exception:
         # ic(e, 'get_points_elevation', 'post error')
         pass
     else:

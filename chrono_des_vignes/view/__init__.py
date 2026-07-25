@@ -18,14 +18,17 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 """
 
-from flask import Blueprint, flash, render_template, redirect
-from chrono_des_vignes import db, set_route, lang_url_for as url_for
-from chrono_des_vignes.models import Event, Inscription
-from flask_login import current_user, login_required
 from datetime import datetime
+
+from flask import Blueprint, flash, redirect, render_template
 from flask_babel import _
-from chrono_des_vignes.lib import assert404, deg_to_dms, create_gcalendar_link
+from flask_login import current_user, login_required
 from werkzeug.wrappers import Response
+
+from chrono_des_vignes import db, set_route
+from chrono_des_vignes import lang_url_for as url_for
+from chrono_des_vignes.lib import assert404, create_gcalendar_link, deg_to_dms
+from chrono_des_vignes.models import Event, Inscription
 
 view = Blueprint("view", __name__, template_folder="templates")
 
@@ -45,6 +48,8 @@ def delete_inscription(inscription_id: str) -> str | Response:
         return redirect(
             url_for("view.view_inscription_page", inscription_id=inscription.id)
         )
+    if inscription.data and inscription.data.inscriptions.count() == 1:
+        db.session.delete(inscription.data)
     db.session.delete(inscription)
     db.session.commit()
 
@@ -57,7 +62,6 @@ def view_inscription_page(inscription_id: str) -> str | Response:
     user = current_user
     inscription = assert404(Inscription.query().filter_by(id=inscription_id).first())
     edition = inscription.edition
-    # ic(inscription, user)
     if inscription.inscrit.id != user.id and inscription.event.createur.id != user.id:
         flash(_("view.error.notyourinscription"), "warning")
         return redirect(url_for("home"))
@@ -125,11 +129,8 @@ def view_edition_page(event_name: str, edition_name: str) -> str | Response:
         time=datetime.now(),
     )
 
-
-@set_route(view, "/view/<event_name>/parcours/<parcours_name>/<parcours_version_name>")
-def view_parcours_page(
-    event_name: str, parcours_name: str, parcours_version_name: str | None = None
-) -> str | Response:
+@set_route(view, "/view/<event_name>/parcours/<parcours_name>")
+def view_parcours_page(event_name: str, parcours_name: str) -> str | Response:
     user_data = current_user if current_user.is_authenticated else None
     event = (
         Event.query()

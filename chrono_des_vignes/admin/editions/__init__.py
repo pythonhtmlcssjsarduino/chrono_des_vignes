@@ -18,21 +18,25 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 """
 
-from typing import cast, TypedDict
-from flask import Blueprint, flash, jsonify, render_template, redirect
-from chrono_des_vignes import admin_required, db, set_route, lang_url_for as url_for
-from chrono_des_vignes.admin.editions.form import Edition_form
-from flask_login import login_required, current_user
-from chrono_des_vignes.api import ApiBlueprint
-from chrono_des_vignes.lib import assert400, assert404
-from chrono_des_vignes.models import Event, Parcours, ParcoursVersion, Edition, Stand
 from datetime import datetime
-from .dossard import dossard
-from .passages import passages
-from .parcours import parcours
-from .result import result
+from typing import TypedDict, cast
+
+from flask import Blueprint, flash, jsonify, redirect, render_template
+from flask_login import current_user, login_required
 from sqlalchemy import or_
 from werkzeug.wrappers import Response
+
+from chrono_des_vignes import admin_required, db, set_route
+from chrono_des_vignes import lang_url_for as url_for
+from chrono_des_vignes.admin.editions.form import Edition_form
+from chrono_des_vignes.api import ApiBlueprint
+from chrono_des_vignes.lib import assert400, assert404
+from chrono_des_vignes.models import Edition, Event, Parcours, ParcoursVersion, Stand
+
+from .dossard import dossard
+from .parcours import parcours
+from .passages import passages
+from .result import result
 
 editions = Blueprint("editions", __name__, template_folder="templates")
 editions.register_blueprint(dossard)

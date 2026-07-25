@@ -19,261 +19,39 @@
 """
 
 from datetime import datetime
-from flask import Blueprint, redirect, render_template, flash, request, session
-from chrono_des_vignes import (
-    admin_required,
-    db,
-    set_route,
-    lang_url_for as url_for,
-    socketio,
-)
-from flask_login import login_required, current_user
+from typing import Literal
+
+from flask import Blueprint, jsonify, render_template
+from flask_login import current_user
+from flask_pydantic import validate
+from flask_sse import sse
+from pydantic import BaseModel
+from werkzeug.wrappers.response import Response
+
+from chrono_des_vignes import admin_required, db, set_route
+from chrono_des_vignes.api import ApiBlueprint
 from chrono_des_vignes.lib import assert404
 from chrono_des_vignes.models import (
-    Event,
+    STATUS_MAP,
     Edition,
+    Event,
+    Inscription,
     ParcoursVersion,
     Passage,
-    Inscription,
 )
-from flask_socketio import join_room, leave_room, emit
-from ..passages import get_passage_data
-from typing import Any, cast
-from werkzeug.wrappers.response import Response
-from icecream import ic
 
 parcours = Blueprint("parcours", __name__, template_folder="templates")
-
-
-@socketio.on("connect", namespace="/edition/parcours")
-def parcours_connect(auth: dict[str, Any]) -> bool:
-    if (
-        current_user.is_authenticated
-        and auth.get("event_id")
-        and auth.get("edition_id")
-    ):
-        event = Event.query().get(auth["event_id"])
-        if not event or event.createur != current_user:
-            return False  # connection not allowed
-        edition = event.editions.filter_by(id=auth["edition_id"]).first()
-        if not edition:
-            return False  # connection not allowed
-
-        session["room"] = f"edition-parcours-{event.id}-{edition.id}"
-        join_room(session["room"], request.sid)
-    else:
-        return False  # connection not allowed
-    return True
-
-
-@socketio.on("disconnect", namespace="/edition/parcours")
-def parcours_disconnect() -> None:
-    leave_room(session["room"], request.sid)
-    del session["room"]
-
-
-@socketio.on("get_parcours_passage", namespace="/edition/parcours")
-def get_parcours_passages(parcours_id: int) -> list[dict[str, Any]]:
-    parcours = ParcoursVersion.query().get(parcours_id)
-    edition = Edition.query().get(cast(str, session["room"]).split("-")[3])
-    inscriptions = (
-        Inscription.query().filter_by(edition=edition, parcours=parcours).all()
-    )
-    data = []
-    for coureur in inscriptions:
-        passage = coureur.get_last_passage()
-        first_passage = coureur.passages.order_by(Passage.time_stamp.asc()).first()
-        if coureur.has_started():
-            pass_data = get_passage_data(passage, json=True)
-            pass_data.update(
-                {
-                    "started": True,
-                    "start_time": first_passage.time_stamp.timestamp(),
-                    "id": coureur.id,
-                    "finish": coureur.has_finish(),
-                    "all_right": coureur.has_all_right(),
-                    "end": coureur.end,
-                }
-            )
-            data.append(pass_data)
-        else:
-            pass_data = {
-                "parcours": [],
-                "started": False,
-                "id": coureur.id,
-                "dossard": coureur.dossard,
-                "name": coureur.inscrit.name,
-            }
-            for stand, dist in zip(
-                coureur.parcours.iter_chrono_list(), coureur.parcours.get_chrono_dists()
-            ):
-                pass_data["parcours"].append(
-                    {
-                        "stand": {"name": stand.name},
-                        "dist": round(dist, 3),
-                        "delta": "",
-                        "success": None,
-                    }
-                )
-            data.append(pass_data)
-    # print(data)
-    return data
-
-
-@socketio.on("launch_parcours", namespace="/edition/parcours")
-def launch_parcours(data: dict[str, Any]) -> None:
-    parcours = ParcoursVersion.query().get(data.get("parcours_id"))
-    edition = Edition.query().get(cast(str, session["room"]).split("-")[3])
-    if parcours and edition and data.get("start_time"):
-        start_time = datetime.fromtimestamp(cast(float, data["start_time"]) / 1000)
-        # ic('start', start_time)
-        inscription: Inscription
-        for inscription in edition.inscriptions.filter(
-            Inscription.parcours == parcours
-        ).all():
-            # ic(inscription, inscription.has_started(), inscription.present, inscription.end)
-            if not inscription.has_started() and inscription.present:
-                # ic('to start')
-                passage = Passage(
-                    time_stamp=start_time, inscription_id=inscription.id, key_id=None
-                )
-                db.session.add(passage)
-                db.session.commit()
-                db.session.refresh(passage)
-                emit(
-                    "new_passage",
-                    {
-                        "time": str(start_time),
-                        "user": inscription.inscrit.username,
-                        "dossard": inscription.dossard,
-                        "key": "",
-                        "stand": passage.get_stand().name,
-                    },
-                    namespace="/dashboard",
-                    to=f"{edition.event.id}-{edition.id}",
-                )
-
-                first_passage = assert404(
-                    inscription.passages.order_by(Passage.time_stamp.asc()).first()
-                )
-                pass_data = get_passage_data(passage, json=True)
-                pass_data.update(
-                    {
-                        "started": True,
-                        "parcours_id": inscription.parcours.id,
-                        "start_time": first_passage.time_stamp.timestamp(),
-                        "id": inscription.id,
-                        "finish": inscription.has_finish(),
-                        "all_right": inscription.has_all_right(),
-                        "end": inscription.end,
-                    }
-                )
-                emit(
-                    "new_passage",
-                    pass_data,
-                    namespace="/edition/parcours",
-                    to=f"edition-parcours-{inscription.event.id}-{inscription.edition.id}",
-                )
-    else:
-        ic(
-            "error value false",
-            parcours is not None and data.get("start_time"),
-            parcours,
-            data.get("start_time"),
-            data,
-        )  # noqa: F821
-
-
-@socketio.on("stop_parcours", namespace="/edition/parcours")
-def stop_parcours(data: dict[str, Any]) -> None:
-    parcours = ParcoursVersion.query().get(data.get("parcours_id"))
-    edition = Edition.query().get(cast(str, session["room"]).split("-")[3])
-
-    if parcours and edition:
-        inscription: Inscription
-        for inscription in edition.inscriptions.filter(
-            Inscription.parcours == parcours
-        ).all():
-            if inscription.end is None:
-                if inscription.has_started():
-                    if inscription.has_finish():
-                        if inscription.has_all_right():
-                            end = "finish"
-                        else:
-                            end = "disqual"
-                    else:
-                        end = "abandon"
-                else:
-                    end = "absent"
-
-                inscription.end = end
-                db.session.commit()
-                emit(
-                    "stop",
-                    {"type": end, "inscription_id": inscription.id},
-                    namespace="/edition/parcours",
-                    to=f"edition-parcours-{inscription.event.id}-{inscription.edition.id}",
-                )
-
-
-@socketio.on("disqualify", namespace="/edition/parcours")
-def disqualify(data: dict[str, Any]) -> None:
-    if data.get("inscription_id"):
-        inscription = assert404(Inscription.query().get(data.get("inscription_id")))
-        # ic('disqualify', inscription)
-        if inscription.end is None:
-            inscription.end = "disqual"
-            db.session.commit()
-            emit(
-                "stop",
-                {"type": "disqual", "inscription_id": inscription.id},
-                namespace="/edition/parcours",
-                to=f"edition-parcours-{inscription.event.id}-{inscription.edition.id}",
-            )
-
-
-@socketio.on("abandon", namespace="/edition/parcours")
-def abandon(data: dict[str, Any]) -> None:
-    if data.get("inscription_id"):
-        inscription = assert404(Inscription.query().get(data["inscription_id"]))
-        # ic('abandon', inscription)
-        if inscription.end is None:
-            inscription.end = "abandon"
-            db.session.commit()
-            emit(
-                "stop",
-                {"type": "abandon", "inscription_id": inscription.id},
-                namespace="/edition/parcours",
-                to=f"edition-parcours-{inscription.event.id}-{inscription.edition.id}",
-            )
-
-
-@socketio.on("finish", namespace="/edition/parcours")
-def finish(data: dict[str, Any]) -> None:
-    # ic('finish', data)
-    if data.get("inscription_id"):
-        inscription = assert404(Inscription.query().get(data["inscription_id"]))
-        # ic('finish', inscription)
-        if inscription.end is None:
-            inscription.end = "finish"
-            db.session.commit()
-            emit(
-                "stop",
-                {"type": "finish", "inscription_id": inscription.id},
-                namespace="/edition/parcours",
-                to=f"edition-parcours-{inscription.event.id}-{inscription.edition.id}",
-            )
+run_control_api = ApiBlueprint("run_control", ["admin_required"], version="v1")
 
 
 @set_route(parcours, "/event/<event_name>/editions/<edition_name>/parcours")
-@login_required
 @admin_required
 def view(event_name: str, edition_name: str) -> str | Response:
     user = current_user
     event = Event.query().filter_by(name=event_name).first_or_404()
     edition = assert404(event.editions.filter_by(name=edition_name).first())
 
-    parcours = edition.parcours_version.all()
+    parcours = edition.parcours_version.first()
 
     return render_template(
         "edition_parcours.html",
@@ -285,3 +63,173 @@ def view(event_name: str, edition_name: str) -> str | Response:
         edition_sidebar=True,
         now=datetime.now(),
     )
+
+
+@run_control_api.route(
+    "/get_edition_data/<int:event_id>/<int:edition_id>", method="GET"
+)
+def get_edition_data(event_id: int, edition_id: int):
+    event = Event.query().get_or_404(event_id)
+    edition = assert404(event.editions.filter_by(id=edition_id).first())
+
+    return jsonify(edition.to_dict())
+
+
+class BatchStartBody(BaseModel):
+    timestamp: datetime
+
+
+def start(inscription: Inscription, timestamp: datetime):
+    passage = Passage(time_stamp=timestamp, inscription_id=inscription.id, key_id=None)
+    db.session.add(passage)
+    db.session.commit()
+    db.session.refresh(passage)
+
+    sse.publish(
+        passage.SSE_data(),
+        type="new_passage",
+        channel=f"passages_{inscription.edition.id}_{inscription.event.id}",
+    )
+    sse.publish(
+        passage.SSE_data(),
+        type="new_passage",
+        channel=f"run_control_{inscription.edition.id}_{inscription.event.id}",
+    )
+
+
+@run_control_api.route(
+    "/launch_parcours/<int:event_id>/<int:edition_id>/<int:parcours_id>", method="POST"
+)
+@validate()
+def api_batch_start(
+    event_id: int, edition_id: int, parcours_id: int, body: BatchStartBody
+):
+    event = Event.query().get_or_404(event_id)
+    edition = assert404(event.editions.filter_by(id=edition_id).first())
+    parcours = (
+        ParcoursVersion.query()
+        .filter_by(id=parcours_id)
+        .filter(ParcoursVersion.editions.any(Edition.id == edition.id))
+        .first_or_404()
+    )
+
+    inscriptions = (
+        edition.inscriptions.filter_by(parcours_id=parcours.id, present=False)
+        .filter(~Inscription.passages.any())
+        .all()
+    )
+    for inscription in inscriptions:
+        start(inscription, body.timestamp)
+
+    return jsonify({"success": True})
+
+
+@run_control_api.route(
+    "/parcours/<int:event_id>/<int:edition_id>/<int:parcours_id>/stop", method="POST"
+)
+def api_batch_stop(event_id: int, edition_id: int, parcours_id: int):
+    event = Event.query().get_or_404(event_id)
+    edition = assert404(event.editions.filter_by(id=edition_id).first())
+    parcours = (
+        ParcoursVersion.query()
+        .filter_by(id=parcours_id)
+        .filter(ParcoursVersion.editions.any(Edition.id == edition.id))
+        .first_or_404()
+    )
+
+    inscriptions = edition.inscriptions.filter_by(
+        parcours_id=parcours.id, end=None, present=False
+    ).all()
+    for inscription in inscriptions:
+        if inscription.has_started():
+            if inscription.has_finish():
+                if inscription.has_all_right():
+                    end = "finish"
+                    status = "finished"
+                else:
+                    end = "disqual"
+                    status = "disqualified"
+            else:
+                end = "abandon"
+                status = "abandoned"
+        else:
+            end = "absent"
+            status = "absent"
+
+        inscription.end = end
+        db.session.commit()
+        sse.publish(
+            {
+                "parcoursId": inscription.parcours_id,
+                "inscriptionId": inscription.id,
+                "status": status,
+            },
+            type="status_change",
+            channel=f"run_control_{inscription.edition.id}_{inscription.event.id}",
+        )
+
+    return jsonify({"success": True})
+
+
+class StartBody(BaseModel):
+    timestamp: datetime
+
+
+@run_control_api.route(
+    "/inscription/<int:event_id>/<int:edition_id>/<int:inscription_id>/start",
+    method="POST",
+)
+@validate()
+def api_start_inscription(
+    event_id: int, edition_id: int, inscription_id: int, body: StartBody
+):
+    event = Event.query().get_or_404(event_id)
+    edition = assert404(event.editions.filter_by(id=edition_id).first())
+
+    inscription = assert404(edition.inscriptions.filter_by(id=inscription_id).first())
+    start(inscription, body.timestamp)
+    return jsonify({"success": None})
+
+
+class action_body(BaseModel):
+    status: Literal["disqualified", "abandoned", "finished"] | None
+
+    @property
+    def db_status(self):
+        match self.status:
+            case "disqualified":
+                return "disqual"
+            case "abandoned":
+                return "abandon"
+            case "finished":
+                return "finish"
+            case None:
+                return None
+
+
+@run_control_api.route(
+    "/inscription/<int:event_id>/<int:edition_id>/<int:inscription_id>/action",
+    method="POST",
+)
+@validate()
+def api_inscription_action(
+    event_id: int, edition_id: int, inscription_id: int, body: action_body
+):
+    event = Event.query().get_or_404(event_id)
+    edition = assert404(event.editions.filter_by(id=edition_id).first())
+
+    inscription = assert404(edition.inscriptions.filter_by(id=inscription_id).first())
+    inscription.end = body.db_status
+    db.session.commit()
+    db.session.refresh(inscription)
+
+    sse.publish(
+        {
+            "parcoursId": inscription.parcours_id,
+            "inscriptionId": inscription.id,
+            "status": STATUS_MAP[inscription.status],
+        },
+        type="status_change",
+        channel=f"run_control_{inscription.edition.id}_{inscription.event.id}",
+    )
+    return jsonify({"success": True})

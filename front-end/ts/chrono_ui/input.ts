@@ -23,6 +23,7 @@ export class TimingInput extends LitElement {
       gap: 0.5rem;
     }
     input {
+      width: 50px;
       flex: 1;
       padding: 0.75rem;
       font-size: 1.2rem;
@@ -61,6 +62,10 @@ export class TimingInput extends LitElement {
     });
   }
 
+  firstUpdated() {
+    this.inputEl.focus();
+  }
+
   private handleKeyDown(e: KeyboardEvent) {
     // Optionnel : Ignorer si la touche est maintenue (autorepeat)
     if (e.repeat) return;
@@ -78,13 +83,6 @@ export class TimingInput extends LitElement {
     else if (e.code === 'Enter') {
       e.preventDefault();
       this.submitAction();
-    }
-    else {
-      if (this.inputEl != document.activeElement && '0123456789'.includes(e.key)) {
-        e.preventDefault()
-        this.inputEl.value += e.key
-        this.inputEl.focus()
-      }
     }
   }
 
@@ -144,7 +142,6 @@ export class TimingInput extends LitElement {
           id="main-input" 
           type="text" 
           placeholder="Saisir dossard" 
-          @keydown=${this.handleKeyDown}
           autocomplete="off"
         >
         <button @click=${this.submitAction}>Valider</button>

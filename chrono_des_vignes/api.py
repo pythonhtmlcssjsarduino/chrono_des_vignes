@@ -19,8 +19,11 @@
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, Literal, Self
+from typing import Any, Literal, Self
+
 from flask import Blueprint, jsonify
 from flask.typing import ResponseReturnValue
 from flask_login import current_user

@@ -4,13 +4,15 @@
 """
 
 from __future__ import annotations
+
 import importlib
-from xml.etree.ElementTree import Element, SubElement, tostring
-from xml.dom.minidom import parseString
-from icecream import ic
 from html import escape
+from typing import TypedDict, cast
+from xml.dom.minidom import parseString
+from xml.etree.ElementTree import Element, SubElement, tostring
+
 from flask import Flask
-from typing import cast, TypedDict
+from icecream import ic
 
 
 class EndpointData(TypedDict):
@@ -20,7 +22,7 @@ class EndpointData(TypedDict):
 
 
 class TreeNode(TypedDict):
-    children: dict[str, "TreeNode"]
+    children: dict[str, TreeNode]
     endpoint: EndpointData | None
 
 

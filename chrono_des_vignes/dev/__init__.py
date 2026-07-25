@@ -17,20 +17,23 @@
 # 
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
-from ast import literal_eval
-from flask import Blueprint, redirect, render_template, flash, jsonify, abort
-from chrono_des_vignes import app, LANGAGES, lang_url_for as url_for
-from functools import wraps
 import glob
 import os
-from babel.messages.pofile import read_po, write_po
-from babel.messages.catalog import Catalog
+from ast import literal_eval
+from functools import wraps
 from io import StringIO
-from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField
-from chrono_des_vignes.custom_validators import DataRequired
-from werkzeug.wrappers import Response
 from typing import Any
+
+from babel.messages.catalog import Catalog
+from babel.messages.pofile import read_po, write_po
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template
+from flask_wtf import FlaskForm
+from werkzeug.wrappers import Response
+from wtforms import StringField, SubmitField
+
+from chrono_des_vignes import LANGAGES, app
+from chrono_des_vignes import lang_url_for as url_for
+from chrono_des_vignes.custom_validators import DataRequired
 
 
 class langForm(FlaskForm):
@@ -85,7 +88,7 @@ def export_strings(source='en', target=None):#type: ignore
             target_catalog = read_po(target_str)
 
             for message in target_catalog:
-                if message.id and message.id in for_tron.keys():
+                if message.id and message.id in for_tron:
                     for_tron[message.id][locale] = message.string
 
     return for_tron
