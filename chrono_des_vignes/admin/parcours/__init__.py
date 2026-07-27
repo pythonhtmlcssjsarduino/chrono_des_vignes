@@ -88,6 +88,7 @@ class ParcoursData(TypedDict):
     modif_allowed: bool
 
 
+# todo error can create 2 parcours with same name
 @api.route("/create_parcours/<int:event_id>", method="POST")
 def create_parcours(event_id: int):
     name = request.form.get("name")
@@ -216,13 +217,10 @@ def update_parcours_put(body: ParcoursDataPut, event_id: int, parcours_version_i
             Trace.query().filter_by(parcours_id=parcours_version_id).delete()
             stand_data = stands[0]
             # update the stand with the provided data and delete all the other stands
-            stand = (
-                Stand.query()
-                .filter_by(id=stand_data["id"], parcours_id=parcours_version_id)
-                .first()
+            stand = assert400(
+                Stand.query().filter_by(parcours_id=parcours_version_id).first()
             )
-            if stand is None:
-                return err(f"stand with id {id} do not exist")
+            ids[stand_data["id"]] = stand.id
             stand.lat = stand_data["lat"]
             stand.lng = stand_data["lng"]
             stand.name = stand_data["name"]
@@ -291,7 +289,7 @@ def update_parcours_put(body: ParcoursDataPut, event_id: int, parcours_version_i
                 )
                 if stand is None:
                     errors.append(
-                        f"stand with id {id} do not exist, it will be created"
+                        f"stand with id {stand_data['id']} do not exist, it will be created"
                     )
                     to_create = True
                 else:
@@ -343,7 +341,7 @@ def update_parcours_put(body: ParcoursDataPut, event_id: int, parcours_version_i
                 )
                 if segment is None:
                     errors.append(
-                        f"segment with id {id} do not exist, it will be created"
+                        f"segment with id {segment_data['id']} do not exist, it will be created"
                     )
                     to_create = True
                 else:
