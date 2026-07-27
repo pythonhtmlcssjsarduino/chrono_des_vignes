@@ -2,7 +2,7 @@
  * Chrono Des Vignes
  * a timing system for sports events
  * 
- * Copyright © 2024-2025 Romain Maurer
+ * Copyright © 2025-2026 Romain Maurer
  * This file is part of Chrono Des Vignes
  * 
  * Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -20,12 +20,23 @@
 
 {% extends 'layout.html' %}
 {% from 'macro.html' import form_field, submit, map_field %}
+
+{% block import %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
+<script src="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.js"></script>
+{% endblock %}
+
 {% block content %}
 <form action="" method="post">
     {{ form.hidden_tag() }}
-    {{ form_field(form.description) }}
+    {{ form_field(form.description, input_id='markdown-textarea') }}
     {{ submit(form) }}
 </form>
+
+<script>
+    const easyMDE = new EasyMDE({element: document.getElementById('markdown-textarea')});
+</script>
 
 {% if not (event_data.parcours.count() or event_data.editions.count()) %}
     <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">

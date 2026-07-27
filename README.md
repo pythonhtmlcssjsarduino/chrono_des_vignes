@@ -10,14 +10,28 @@ Chrono des Vignes is a timing system for sports events. It allows event organize
 ## Getting Started
 To get started with Chrono des Vignes, please follow these steps:
 
-1. Rebuild the virtual environment from the `requirements.txt` file
-2. Open a terminal with the virtual environment
-3. Launch the server with the following command:
-    ```shell
-    $env:FLASK_DEBUG = 1;$env:FLASK_APP = "chrono_des_vignes";flask run --extra-files flask-app/templates/:flask_app/translations/```
+1. install (if not already) [uv cli](https://docs.astral.sh/uv/#installation)
+1. install npm and node
+1. rebuild the venv, .env, db, doc, js, and translation with ```uv run inv init```
+1. Launch the server with the following command: ```uv run invoke serve```
 
+### migrate the db (if changed)
+```
+uv run flask --app chrono_des_vignes db stamp
+uv run flask --app chrono_des_vignes db upgrade
+```
+
+#### add migration if change the db schema (models.py)
+```uv run flask db migrate -m "your migration message"```
+
+ <!--
+ not online for now 
 ## Live Demo
 Experience Chrono des Vignes in action by visiting our [Deployed version](https://chronodesvignes.eu.pythonanywhere.com/).
 
 ## Documentation
 For detailed usage instructions, please refer to our [Documentation](https://chronodesvignes.eu.pythonanywhere.com/doc).
+-->
+## Contact 
+You may contact me at chrono-des-vignes@ikmail.com
+or from my github https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes

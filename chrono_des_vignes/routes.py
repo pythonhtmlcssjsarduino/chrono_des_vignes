@@ -18,21 +18,30 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
-from flask import render_template, request, session, redirect, send_file, send_from_directory, url_for, abort
-from chrono_des_vignes import app, LANGAGES, set_route
-from flask_login import current_user
-from chrono_des_vignes.models import Edition, Inscription, Event, User
-from sqlalchemy import and_
 from datetime import datetime
-from flask_babel import gettext, force_locale, get_locale, lazy_gettext
-from chrono_des_vignes.admin import NewEventForm
-import os
+from pathlib import Path
+
+from flask import (
+    make_response,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+)
+from flask_login import current_user
+from sqlalchemy import and_
+from werkzeug.wrappers.response import Response
+
+from chrono_des_vignes import LANGAGES, app, db, set_route
+from chrono_des_vignes.admin.form import NewEventForm
+from chrono_des_vignes.models import Edition, Event, Inscription
+
 
 @set_route(app, '/')
-def home():
+def home()->str:
     # * home page of the web site
     if current_user.is_authenticated:
-        user:User = current_user
+        user = current_user
         inscriptions = user.inscriptions.filter(Inscription.edition.has(Edition.edition_date>datetime.now())).all()
         participations = user.inscriptions.filter(Inscription.edition.has(Edition.edition_date<=datetime.now())).all()
         form = NewEventForm()
@@ -42,15 +51,13 @@ def home():
         participations = None
         form = None
     date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    next_events = Event.query.filter(Event.editions.any(and_(Edition.edition_date>=date,Edition.last_inscription>=date))).filter(Event.id!=1).all()
+    next_events = db.session.query(Event).filter(Event.editions.any(and_(Edition.edition_date>=date,Edition.last_inscription>=date))).all()
     return render_template("0-home.html", user_data=user, inscriptions=inscriptions, events = next_events, participations=participations, form=form)
 
 @app.route('/lang/<lang>')
-def change_lang(lang):
+def change_lang(lang:str)->Response:
     next = request.args.get('next')
-    #ic(next)
-    #ic(next.split('/')[1])
-    next = next.split('/')
+    next = next.split('/')  # pyright: ignore[reportOptionalMemberAccess]
     if next[1] in LANGAGES:
         if lang==request.accept_languages.best_match(LANGAGES):
             next.pop(1)
@@ -60,27 +67,29 @@ def change_lang(lang):
         if lang!=request.accept_languages.best_match(LANGAGES):
             next.insert(1, lang)
     next = '/'.join(next)
-    #ic(next)
     return redirect(next)
+
+DOC_DIR = Path(app.root_path) / 'static/doc'
 
 @app.route('/doc/<path:path>')
 @app.route('/doc/<lang>/<path:path>')
 @app.route('/doc/')
-def doc(path='', lang=''):
-    if not os.path.exists(os.path.join(app.root_path,app.template_folder, 'doc/site/index.html' if path == '' else f'doc/site/{path}index.html')):
-        return render_template('doc/site/404.html')
+def doc(path: str='', lang: str=''):
+    if path == 'style.css':
+        return send_from_directory(DOC_DIR, 'style.css')
     lang=lang+"/" if lang else ""
-    return render_template(f'doc/site/{lang}index.html' if path == '' else f'doc/site/{lang}{path}index.html')
+    file = Path(f'{lang}index.html' if path == '' else f'{lang}{path}index.html')
+    if not (DOC_DIR/file).exists():
+        return make_response(send_from_directory(DOC_DIR, '404.html'), 404)
+    return send_from_directory(DOC_DIR.as_posix(), file.as_posix(), download_name=file.name)
 
 @app.route('/doc/assets/<path:path>')
-def assets_doc_files(path):
+def assets_doc_files(path:str)->Response:
     return doc_file('assets', path)
 
 @app.route('/doc/search/<path:path>')
-def search_doc_files(path):
+def search_doc_files(path: str)->Response:
     return doc_file('search', path)
 
-def doc_file(dir, path:str):
-    if not os.path.exists(os.path.join(app.root_path,app.template_folder, f'doc/site/{dir}/{path}')): 
-        return abort(404)
-    return send_from_directory(app.template_folder, f'doc/site/{dir}/{path}', download_name=path.split('/')[-1])
+def doc_file(dir:str, path:str)->Response:
+    return send_from_directory(DOC_DIR.as_posix(), f'{dir}/{path}', download_name=Path(path).name)

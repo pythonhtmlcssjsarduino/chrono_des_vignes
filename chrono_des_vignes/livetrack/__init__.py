@@ -2,7 +2,7 @@
 # Chrono Des Vignes
 # a timing system for sports events
 # 
-# Copyright © 2025 Romain Maurer
+# Copyright © 2024-2025 Romain Maurer
 # This file is part of Chrono Des Vignes
 # 
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -18,15 +18,19 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 '''
 
+from typing import Any
+
 from flask import Blueprint, render_template
-from chrono_des_vignes import app, set_route
-from chrono_des_vignes.models import Inscription, Passage
+from werkzeug.wrappers import Response
+
+from chrono_des_vignes import set_route
 from chrono_des_vignes.lib import format_timedelta
+from chrono_des_vignes.models import Inscription, Passage
 
 livetrack = Blueprint('livetrack', __name__, template_folder='templates')
 
-def get_run_result(inscription:Inscription, json=False)->list[dict]:
-    data = []
+def get_run_result(inscription:Inscription, json: bool=False)->list[dict[str, Any]]:
+    data:list[dict[str, Any]] = []
 
     user_passages:list[Passage] = inscription.passages.order_by(Passage.time_stamp.asc()).all()
     if len(user_passages)>0:
@@ -68,8 +72,8 @@ def get_run_result(inscription:Inscription, json=False)->list[dict]:
     return data
 
 @set_route(livetrack, '/livetrack/<inscription_id>')
-def livetrack_page(inscription_id):
-    inscription:Inscription = Inscription.query.get_or_404(inscription_id)
+def livetrack_page(inscription_id: str)->str|Response:
+    inscription:Inscription = Inscription.query().get_or_404(inscription_id)
 
     #ic(get_run_result(inscription))
 

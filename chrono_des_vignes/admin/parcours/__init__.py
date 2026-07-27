@@ -1,681 +1,564 @@
-'''
+"""
 # Chrono Des Vignes
 # a timing system for sports events
-# 
-# Copyright © 2024-2025 Romain Maurer
+#
+# Copyright © 2024-2026 Romain Maurer
 # This file is part of Chrono Des Vignes
-# 
+#
 # Chrono Des Vignes is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software Foundation,
 # either version 3 of the License, or (at your option) any later version.
-# 
+#
 # Chrono Des Vignes is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
 # without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
 # You should have received a copy of the GNU General Public License along with Foobar.
 # If not, see <https://www.gnu.org/licenses/>.
-# 
+#
 # You may contact me at chrono-des-vignes@ikmail.com
-'''
+"""
 
-from flask import Blueprint, flash, redirect, render_template, request, abort
-from chrono_des_vignes import admin_required, db, set_route, lang_url_for as url_for
-from .form import  Parcours_name_form, Etape_modif_form, Stand_modif_form, New_parcours_form
-from flask_login import login_required, current_user
-from chrono_des_vignes.models import Event, Stand, Trace, Parcours
-from folium import Map, Marker, Icon, PolyLine, Popup, LayerControl, TileLayer
-from jinja2 import Template
+from ast import literal_eval
+from datetime import datetime
+from typing import Any, TypedDict, cast
+
 from colour import Color
-from chrono_des_vignes.lib import get_points_elevation, calc_points_dist, midpoint
-from sqlalchemy import or_
+from flask import Blueprint, jsonify, render_template, request
+from flask_login import current_user, login_required
+from flask_pydantic import validate
+from icecream import ic
+from pydantic import BaseModel
+from werkzeug.wrappers.response import Response
 
-parcours_bp = Blueprint('parcours', __name__, template_folder='templates')
+from chrono_des_vignes import (
+    admin_required,
+    db,
+    set_route,
+)
+from chrono_des_vignes import (
+    lang_url_for as url_for,
+)
+from chrono_des_vignes.api import ApiBlueprint
+from chrono_des_vignes.lib import (
+    assert400,
+    assert404,
+    is_valide_name,
+)
+from chrono_des_vignes.models import (
+    Event,
+    Parcours,
+    ParcoursVersion,
+    Stand,
+    Trace,
+    get_column_max_length,
+)
 
-@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/delete')
-@login_required
-@admin_required
-def delete_parcours_page(event_name, parcours_name):
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
-    if parcours.editions.count()>0:
-        flash('action impossible le parcours est déjà utilisé dans une edition.', 'danger')
-        return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-    for e in tuple(parcours):
-        db.session.delete(e)
-    db.session.delete(parcours)
+parcours_bp = Blueprint("parcours", __name__, template_folder="templates")
+# region api
+api = ApiBlueprint.admin("parcours")
+
+
+class StandData(TypedDict):
+    id: int
+    name: str
+    lat: float
+    lng: float
+    ele: float | None
+    color: str
+    chrono: bool
+
+
+class SegmentData(TypedDict):
+    id: int
+    start: int
+    to: int
+    trace: list[tuple[float, float, float | None]]
+    index: int
+
+
+class ParcoursData(TypedDict):
+    id: int
+    event_id: int
+    name: str
+    description: str
+    creation_date: datetime
+    stands: list[StandData]
+    segments: list[SegmentData]
+    modif: bool
+    modif_allowed: bool
+
+
+# todo error can create 2 parcours with same name
+@api.route("/create_parcours/<int:event_id>", method="POST")
+def create_parcours(event_id: int):
+    name = request.form.get("name")
+    if name is None or not is_valide_name(
+        name, get_column_max_length(Parcours, "name"), 0
+    ):
+        return err("name field is not valid")
+
+    # region create parcours
+
+    # create Parcours Object
+    parcours = Parcours(name, event_id)
+    db.session.add(parcours)
     db.session.commit()
-    flash('parcours supprimé!', 'success')
-
-    return redirect(url_for('admin.parcours.parcours_page', event_name=event.name))
-
-@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/copy')
-@login_required
-@admin_required
-def copy_parcours(event_name, parcours_name):
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
-
-    p = Parcours(name=f'{parcours.name} copy', event=event, description=parcours.description, chronos_list=parcours.chronos_list)
-    db.session.add(p)
+    db.session.refresh(parcours)
+    # create a first version
+    version = ParcoursVersion(parcours.id, version="1")
+    db.session.add(version)
     db.session.commit()
-    db.session.refresh(p)
-    old_stands = Stand.query.filter_by(parcours_id=parcours.id).all()
-    old_to_new_id = {}
-    for old_stand in old_stands:
-        new_stand = Stand(name=old_stand.name, lat=old_stand.lat, lng=old_stand.lng, elevation=old_stand.elevation, parcours_id=p.id, start_stand=p.id if old_stand.start_stand else None, end_stand=p.id if old_stand.end_stand else None, color=old_stand.color, chrono=old_stand.chrono)
-        db.session.add(new_stand)
-        db.session.commit()
-        db.session.refresh(new_stand)
-        old_to_new_id[old_stand.id] = new_stand.id
-    
-    old_traces:list[Trace] = Trace.query.filter_by(parcours_id=parcours.id).all()
-    for old_trace in old_traces:
-        new_trace = Trace(name=old_trace.name, parcours_id=p.id, start_id=old_to_new_id[old_trace.start_id], end_id=old_to_new_id[old_trace.end_id], trace=old_trace.trace, turn_nb=old_trace.turn_nb)
-        db.session.add(new_trace)
-        db.session.commit()
-
-    return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=f'{parcours.name} copy'))
-
-@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/archive')
-@login_required
-@admin_required
-def archive_parcours_page(event_name, parcours_name):
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
-    parcours.archived =True
+    db.session.refresh(version)
+    # with a first start stand
+    stand = Stand("", 1000, 0, version.id)
+    db.session.add(stand)
     db.session.commit()
-    return redirect(url_for('admin.parcours.parcours_page', event_name=event.name))
 
-@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/unarchive')
-@login_required
-@admin_required
-def unarchive_parcours_page(event_name, parcours_name):
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
-    parcours.archived =False
-    db.session.commit()
-    return redirect(url_for('admin.parcours.parcours_page', event_name=event.name))
+    # endregion
+    return jsonify(
+        {
+            "success": True,
+            "parcours_id": parcours.id,
+            "url": url_for(
+                "admin.parcours.modify_parcours",
+                event_name=parcours.event.name,
+                parcours_name=parcours.name,
+            ),
+        }
+    )
 
-@set_route(parcours_bp, '/event/<event_name>/parcours', methods=['POST', 'GET'])
-@login_required
-@admin_required
-def parcours_page(event_name):
-    # * page to access the differents parcours of the event
-    event = Event.query.filter_by(name=event_name).first()
-    user = current_user
 
-    form = New_parcours_form()
-    if form.validate_on_submit():
-        if not event.parcours.filter_by(name=form.name.data).first():
-            #ok nom pas utilisé
+# region
 
-            p = Parcours(name=form.name.data, event=event)
-            db.session.add(p)
-            db.session.commit()
-            db.session.refresh(p)
-            s= Stand(name=f'debut-{form.name.data}'[:36], parcours_id=p.id, lat=form.start_lat.data, lng=form.start_lng.data, chrono=1, start_stand=p.id, end_stand=p.id)
-            db.session.add(s)
-            db.session.commit()
+# endregion
 
-            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=form.name.data))
-        else:
-            form.name.errors = list(form.name.errors)+['vous utiliser deja ce nom.']
-    active_parcours = event.parcours.filter_by(archived=False).all()
-    archived_parcours = event.parcours.filter_by(archived=True).all()
-    
-    return render_template("parcours.html", user_data=user, event_data=event, archived_parcours=archived_parcours, active_parcours=active_parcours, event_modif=True, form=form)
 
-def build_alt_graph(graph_data):
+def get[T](obj: dict[str, Any], key: str, t: type[T]):
+    if isinstance(p := obj.get(key, None), t):
+        return p
     return None
-    
-    points = []
-    to_request=[]
-    last_point=None
-    dist = 0
-    for e in graph_data:
-        if isinstance(e, Stand):
-            dist += calc_points_dist(e.lat, e.lng, last_point[0], last_point[1]) if last_point else 0
-            last_point = e.lat, e.lng
-            if e.elevation:
-                points.append({'x':dist, 'y':e.elevation, 'label':e.name, 'type':'stand'})
-            else:
-                to_request.append(e)
-                points.append({'x':dist, 'y':0, 'label':e.name, 'type':'stand'})
-        elif isinstance(e, Trace):
-            trace = e
-            if len(trace):
-                if trace.has_alt(): # si il y a l'altitude
-                    for point in trace:
-                        dist += calc_points_dist(point.lat, point.lng, last_point[0], last_point[1])
-                        last_point = point.lat, point.lng
-                        points.append({'x':dist, 'y':point.alt, 'label':e.name, 'type':'trace'})
-                else:
-                    response = get_points_elevation([(lat, lng) for lat, lng, _ in trace] )
-                    if response is not None:
-                        e.set_trace([(p['latitude'], p['longitude'], p['elevation']) for p in response])
-                        db.session.commit()
-                        for point in trace:
-                            dist += calc_points_dist(point.lat, point.lng, last_point[0], last_point[1])
-                            last_point = point.lat, point.lng
-                            points.append({'x':dist, 'y':point.alt, 'label':e.name, 'type':'trace'})
-
-    response = get_points_elevation([(req.lat, req.lng) for req in to_request])
-    if len(to_request) > 0 and response is not None:
-        for index, point in enumerate(points):
-            if point['y'] is None:
-                ele = response.pop(0)['elevation']
-                to_request.pop(0).elevation = ele
-                points[index]['y'] = ele
-        db.session.commit()
-
-    return points
 
 
-def create_map_and_alt_graph(parcours:Parcours, modif= False, rdv=None, current_stand_id=None, current_trace_id=None):
-     #! create the map
-    map_style = request.args.get('map', 'osm')
-    map_styles={'topo':{'tiles':'https://tile.opentopomap.org/{z}/{x}/{y}.png',
-                        'attr':'opentopomap',
-                        'name':'topographie',
-                        'max_zoom':17},
-                'sat':{'tiles':'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                            'attr':'Esri',
-                            'name':'Satellite',
-                            'max_zoom':20},
-                'osm':{'tiles':'OpenStreetMap',
-                        'attr':None,
-                        'name':None,
-                        'max_zoom':20}}
-    map_styles = {k:v if k==map_style else {**v, 'show':False} for k,v in map_styles.items()}
-
-    program_list=[]
-    part_list = []
-    marker_coordonee = []
-    stands=set()
-    next_path_name =[]
-    last_path_name = []
-    markers_name = []
-    chrono_list = []
-    start = parcours.start_stand
-    map = Map(max_zoom=22,
-            location=(0,0),
-            zoom_start=1)
-    new_stand:Stand=start
-    # si aucun depart alors ne mettre aucun stand
-    if start:
-        if modif:
-            popup = Popup()
-            popup._template = Template("""
-                var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                {{ this._parent.get_name() }}.on("click", function() {on_marker_click(%s)})
-                """%start.id)
-        last_m=Marker((start.lat, start.lng),
-                tooltip=start.name,
-                icon=Icon(icon_color=start.color.hex, icon='flag-checkered', prefix='fa', color='orange' if new_stand.id != current_stand_id else 'green'),
-                popup=popup if modif else None).add_to(map)
-        element_name = last_m.get_name()
-        part_list.append(start)
-        program_list.append({'type':'marker', 'lat':start.lat, 'lng':start.lng, 'name':start.name, 'id':start.id, 'color':start.color.hex, 'step':0})
-        stands.add(start)
-        chrono_list.append(start.id)
-        turn_nb = 0
-        step =0
-        while True:
-            if new_stand == start:
-                turn_nb +=1
-            step += 1
-            old_stand = new_stand
-            # si l'ancien stand a une trace qui part de lui
-            trace = old_stand.start_trace.filter_by(turn_nb=turn_nb).first()
-            if trace is not None :
-                new_stand = trace.end
-                if new_stand.chrono : chrono_list.append(new_stand.id)
-                if new_stand not in stands:
-                    if modif:
-                        popup = Popup()
-                        popup._template = Template("""
-                                var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                                {{ this._parent.get_name() }}.on("click", function() {on_marker_click(%s)})
-                                """%new_stand.id)
-                    last_m=Marker((new_stand.lat, new_stand.lng),
-                        tooltip=new_stand.name,
-                        icon=Icon(icon_color=new_stand.color.hex, prefix='fa', icon='stopwatch' if new_stand.chrono else 'circle-info'),
-                        popup=popup if modif else None).add_to(map)
-                    if current_stand_id != None and new_stand.id == current_stand_id :
-                        last_m.icon.options['markerColor']='green'
-                        element_name = last_m.get_name()
-
-                    # plus pour savoir si le stand est deja sur la map et la mettre sur la liste des programme
-                    stands.add(new_stand)
-
-                part_list.append(trace)
-                part_list.append(new_stand)
-
-                program_list.append({'type':'trace', 'name':trace.name, 'id':trace.id, 'trace':eval(trace.trace)})
-                program_list.append({'type':'marker', 'lat':new_stand.lat, 'lng':new_stand.lng, 'name':new_stand.name, 'id':new_stand.id, 'color':new_stand.color.hex, 'step':step})
-
-                poly_points = [[old_stand.lat, old_stand.lng ],*([lat, lng] for lat, lng, _ in eval(trace.trace)),[new_stand.lat, new_stand.lng]]
-                marker_coordonee += poly_points
-                if modif:
-                    popup = Popup()
-                    popup._template = Template("""
-                                var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                                {{ this._parent.get_name() }}.on("click", function() {on_trace_click(%s)})
-                                """%trace.id)
-                if str(trace.id)!=current_trace_id:
-                    poly = PolyLine(poly_points, tooltip=trace.name, popup=popup if modif else None).add_to(map)
-                if current_stand_id != None and new_stand.id == current_stand_id :
-                    last_path_name.append(poly.get_name())
-                elif current_stand_id != None and old_stand.id == current_stand_id :
-                    next_path_name.append(poly.get_name())
-            else:
-                last_m.icon.options['icon']='flag-checkered'
-                last_m.icon.options['prefix']='fa'
-                break
-    else:
-        element_name=None
-
-    parcours.chronos_list = str(chrono_list)
-    db.session.commit()
-    
-    graph = build_alt_graph(part_list)
-
-    # afficher le trace pour les modifications
-    if current_trace_id != None and modif:
-        trace = Trace.query.filter_by(id=current_trace_id).first()
-        if trace is None or trace.parcours != parcours:
-            abort(400)
-        poly_points = [[trace.start.lat, trace.start.lng ],*[[lat, lng] for lat, lng, _ in eval(trace.trace)],[trace.end.lat, trace.end.lng]]
-        marker_coordonee += poly_points
-        popup = Popup()
-        popup._template = Template("""
-                    var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                    {{ this._parent.get_name() }}.on("click", function() {on_trace_click(%s)})
-                    """%trace.id)
-        line = PolyLine(poly_points, dash_array='5', tooltip=trace.name, popup=popup).add_to(map)
-        element_name= line.get_name()
-        last_point = tuple(poly_points[0])
-        i=-1
-        for i,( lat, lng) in enumerate(poly_points[1:-1]): # affiche chaque marker d'angle et les signes plus pour ajouter un point
-            popup = Popup()
-            popup._template = Template("""
-                        var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                        {{ this._parent.get_name() }}.on("click", function() {trace_point_modif(%s)})
-                        """%f'{lat}, {lng}')
-            # place le marker a l'angle
-            marker = Marker((lat, lng),
-                    icon=Icon(icon='flag', prefix='fa', color='green'),
-                    popup=popup).add_to(map)
-
-            # affiche le plus pour ajouter un point sur
-            # le point central entre les deux points
-            midlatlng = midpoint(last_point, (lat,lng))
-            popup = Popup()
-            popup._template = Template("""
-                    var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                    {{ this._parent.get_name() }}.on("click", function() {trace_point_add(%s)})
-                    """%f'{midlatlng[0]}, {midlatlng[1]}, {i}')
-            mid_marker = Marker((midlatlng[0], midlatlng[1]),
-                                popup=popup,
-                                icon=Icon(icon='circle-plus', prefix='fa', color='lightgreen')).add_to(map)
-            ####
-            markers_name.append({'lat':lat, 'lng':lng, 'name':marker.get_name()})
-            last_point = (lat, lng)
-        # affiche le dernier point d'ajout
-        midlatlng = midpoint(last_point, poly_points[-1])
-        popup = Popup()
-        popup._template = Template("""
-                var {{this.get_name()}} = L.popup({{ this.options|tojson }});
-                {{ this._parent.get_name() }}.on("click", function() {trace_point_add(%s)})
-                """%f'{midlatlng[0]}, {midlatlng[1]}, {i+1}')
-        mid_marker = Marker((midlatlng[0], midlatlng[1]),
-                            popup=popup,
-                            icon=Icon(icon='circle-plus', prefix='fa', color='lightgreen')).add_to(map)
-
-    # trouver et centre la map sur le parcours
-    lats, lngs = set([i[0] for i in marker_coordonee]), set([i[1] for i in marker_coordonee])
-    marker_coordonee = [[la, lo] for la, lo in marker_coordonee]
-    if len(lats)!=0 or len(lngs)!=0:
-        map.fit_bounds([min(marker_coordonee), max(marker_coordonee)], max_zoom=19)
-    # ? ajout different layer
-    #TileLayer('OpenStreetMap', max_zoom=20).add_to(map)
-    #TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri', name='satelite', max_zoom=20).add_to(map)
-    for name, data in map_styles.items():
-        TileLayer(**data).add_to(map)
-    LayerControl().add_to(map)
-
-    if rdv:
-        lat, lng = rdv
-        Marker((lat, lng),
-                tooltip='rendez-vous',
-                icon=Icon(icon_color='#0f0', prefix='fa', icon='arrows-to-circle', color='red')).add_to(map)
-        map.fit_bounds([(lat,lng), (lat, lng)], max_zoom=15)
-
-    return element_name, last_path_name, next_path_name, markers_name, program_list, map, graph
+def get_id(obj: dict[str, Any], ids: dict[int, int], key: str = "id"):
+    if (id := get(obj, key, int)) is not None:
+        return id if id > 0 else ids.get(id, None)
+    return None
 
 
-@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>', methods=['POST', 'GET'])
-@login_required
-@admin_required
-def modify_parcours(event_name, parcours_name):
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+def err(msg: str, op: dict[str, Any] | None = None, ids: dict[int, int] | None = None):
+    return jsonify(
+        {
+            "success": False,
+            "error": msg,
+            "op": op,
+            "ids": ids,
+        }
+    )
 
-    return render_modify_parcours(event, parcours)
 
-@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/stand/<int:stand_id>', methods=['POST', 'GET'])
-@login_required
-@admin_required
-def modify_stand(event_name, parcours_name, stand_id):
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
-    stand = parcours.stands.filter_by(id=stand_id).first()
-    
-    if stand is None:
-        return redirect(url_for('parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-    first_or_last = parcours.end_stand==stand or parcours.start_stand==stand
+class ParcoursDataPut(BaseModel):
+    id: int
+    event_id: int
+    name: str
+    description: str
+    creation_date: datetime
+    stands: list[StandData]
+    segments: list[SegmentData]
+    modif: bool
+    modif_allowed: bool
 
-    modif_form = Stand_modif_form(data={'name':stand.name,
-                                        'lat':stand.lat,
-                                        'lng':stand.lng,
-                                        'color':stand.color.hex_l,
-                                        'chrono':stand.chrono})
-    
-    if first_or_last:
-        modif_form.chrono.render_kw = {'disabled':''}
 
-    if modif_form.validate_on_submit():
-        if stand.name == modif_form.name.data or not parcours.stands.filter_by(name=modif_form.name.data).first():
-            # name
-            stand.name = modif_form.name.data
-            if stand.lat != modif_form.lat.data or stand.lng != modif_form.lng.data:
-                # lat
-                stand.lat = modif_form.lat.data
-                # lng
-                stand.lng = modif_form.lng.data
-                # elevation
-                ele = get_points_elevation([(modif_form.lat.data, modif_form.lng.data)])
-                if ele:
-                    stand.elevation = ele[0]['elevation']
-            # color
-            stand.color = Color(modif_form.color.data)
-            # chrono
-            stand.chrono = bool(modif_form.chrono.data)
-            db.session.commit()
-            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-        else:
-            modif_form.name.errors = list(name_form.name.errors)+['vous utiliser déjà ce nom.']
+@api.route("/update_parcours/<int:event_id>/<int:parcours_version_id>", method="PUT")
+@validate()
+def update_parcours_put(body: ParcoursDataPut, event_id: int, parcours_version_id: int):
+    ic("put", body.model_dump_json())
+    parcours: ParcoursVersion = (
+        ParcoursVersion.query()
+        .filter(
+            ParcoursVersion.parcours.has(Parcours.event_id == event_id),
+            ParcoursVersion.id == parcours_version_id,
+        )
+        .first_or_404()
+    )
+    # metadata
+    if body.id != parcours.id:
+        return err("id does not correspond to the correct one")
+    parcours.description = body.description
+    parcours.parcours.name = body.name
 
-    return render_modify_parcours(event, parcours, 'marker', modif_form, stand=stand)
+    segments = sorted(body.segments, key=lambda s: s["index"])
+    stands = body.stands
 
-@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/trace/<int:trace_id>', methods=['POST', 'GET'])
-@login_required
-@admin_required
-def modify_trace(event_name, parcours_name, trace_id):
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
-    trace = parcours.traces.filter_by(id=trace_id).first()
+    # from that type of data we want to update the parcours, the stands and the segments. we will use the id field to know if we need to create a new stand/segment or update an existing one. if the id is negative it means that we need to create a new stand/segment. if the id is positive it means that we need to update an existing stand/segment with that id
+    # we will first check that all the provided stands and segments are valid, then we will update/create them, and at the end we will check if there is any stand/segment that need to be deleted (if they are not in the provided data)
+    # can you do it for me please ?
+    errors: list[str] = []
+    ids: dict[int, int] = {}  # old id to new id
 
-    if trace is None:
-        return redirect(url_for('parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-    
-    #! creation du formulaire de modification
-    modif_form = Etape_modif_form(data={'name':trace.name, 'path':str([[lat, lng] for lat, lng, _ in eval(trace.trace)])})
-    if modif_form.validate_on_submit():
-        if trace.name == modif_form.name.data or not parcours.traces.filter_by(name=modif_form.name.data).first():
-            # name
-            trace.name = modif_form.name.data
+    if len(segments) == 0:
+        # only one stand
+        if len(stands) == 0:
+            # delete all segment and all stand except the start stand (set to the default one)
+            Trace.query().filter_by(parcours_id=parcours_version_id).delete()
+            # first select one stand and set it to default
+            default_stand = assert400(
+                Stand.query().filter_by(parcours_id=parcours_version_id).first()
+            )
+            default_stand.name = ""
+            default_stand.lat = 1000
+            default_stand.lng = 0
+            default_stand.elevation = None
+            default_stand.color = Color("#ff0000")
+            default_stand.chrono = False
+            Stand.query().filter_by(parcours_id=parcours_version_id).filter(
+                Stand.id != default_stand.id
+            ).delete()
+        elif len(stands) == 1:
+            Trace.query().filter_by(parcours_id=parcours_version_id).delete()
+            stand_data = stands[0]
+            # update the stand with the provided data and delete all the other stands
+            stand = assert400(
+                Stand.query().filter_by(parcours_id=parcours_version_id).first()
+            )
+            ids[stand_data["id"]] = stand.id
+            stand.lat = stand_data["lat"]
+            stand.lng = stand_data["lng"]
+            stand.name = stand_data["name"]
             try:
-                def float_int(value):
+                stand.color = Color(stand_data["color"])
+            except ValueError:
+                return err(
+                    f"{stand_data['color']}) is not a valid color. see https://pypi.org/project/colour/"
+                )
+            stand.chrono = stand_data["chrono"]
+            Stand.query().filter_by(parcours_id=parcours_version_id).filter(
+                Stand.id != stand.id
+            ).delete()
+
+        else:
+            return err("if there is no segment there should be maximum one stand")
+    else:  # there is at least one segment
+        curr_index = -1
+        curr_stand_id: int | None = None
+        stands_ids = set[int]()
+        for segment_data in segments:
+            curr_index += 1
+            if segment_data["index"] != curr_index:
+                segment_data["index"] = curr_index
+                errors.append(
+                    f"segment with id {segment_data['id']} had an invalid index, it has been set to {curr_index}"
+                )
+            if segment_data["start"] != curr_stand_id and curr_stand_id is not None:
+                # invalid start stand
+                errors.append(
+                    f"segment with id {segment_data['id']} had an invalid start stand id. fatal error"
+                )
+                return jsonify({"success": False, "errors": errors})
+            curr_stand_id = segment_data["to"]
+            stands_ids.add(segment_data["start"])
+            stands_ids.add(segment_data["to"])
+        unused_stands = set[int]()
+        for stand_data in stands:
+            if stand_data["id"] not in stands_ids:
+                unused_stands.add(stand_data["id"])
+                errors.append(
+                    f"stand with id {stand_data['id']} is not used by any segment, it will be deleted"
+                )
+        # delete unused stands
+        if len(unused_stands) > 0:
+            Stand.query().filter_by(parcours_id=parcours_version_id).filter(
+                Stand.id.in_(unused_stands)
+            ).delete()
+        # delete unused segments
+        segment_ids = set[int](s["id"] for s in segments)
+        Trace.query().filter_by(parcours_id=parcours_version_id).filter(
+            Trace.id.not_in(segment_ids)
+        ).delete()
+
+        # update/create stands
+        for stand_data in stands:
+            if stand_data["id"] not in stands_ids:
+                continue
+            to_create = stand_data["id"] < 0
+            if not to_create:
+                # update the stand with the provided data
+                stand = (
+                    Stand.query()
+                    .filter_by(id=stand_data["id"], parcours_id=parcours_version_id)
+                    .first()
+                )
+                if stand is None:
+                    errors.append(
+                        f"stand with id {stand_data['id']} do not exist, it will be created"
+                    )
+                    to_create = True
+                else:
+                    stand.lat = stand_data["lat"]
+                    stand.lng = stand_data["lng"]
+                    stand.name = stand_data["name"]
+                    stand.elevation = stand_data["ele"]
                     try:
-                        str(value).index('.')
-                        return float(value)
-                    except:
-                        return int(value)
+                        stand.color = Color(stand_data["color"])
+                    except ValueError:
+                        errors.append(
+                            f"{stand_data['color']}) is not a valid color. see https://pypi.org/project/colour/"
+                        )
+                    stand.chrono = stand_data["chrono"]
+                    db.session.commit()
+            if to_create:
+                # create a new stand
+                # check the color
+                try:
+                    color = Color(stand_data["color"])
+                except ValueError:
+                    errors.append(
+                        f"{stand_data['color']}) is not a valid color. it will be set to #ff0000. see https://pypi.org/project/colour"
+                    )
+                    color = Color("#ff0000")
+                stand = Stand(
+                    name=stand_data["name"],
+                    lat=stand_data["lat"],
+                    lng=stand_data["lng"],
+                    elevation=stand_data["ele"],
+                    color=color,
+                    chrono=stand_data["chrono"],
+                    parcours_id=parcours_version_id,
+                )
+                db.session.add(stand)
+                db.session.commit()
+                db.session.refresh(stand)
+                ids[stand_data["id"]] = stand.id
 
-                new = [[float_int(lat),float_int(lng)] for lat,lng in list(eval(modif_form.path.data))]
-                elevation = get_points_elevation(new)
-                new = str([[float_int(lat),float_int(lng), float_int(ele['elevation'])] for (lat,lng), ele in zip(list(eval(modif_form.path.data)), elevation)])
-            except:
-                return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-            else:
-                trace.trace = new
-            db.session.commit()
-            #return redirect(request.path)
+        # update/create segments
+        for segment_data in segments:
+            to_create = segment_data["id"] < 0
+            if not to_create:
+                # update the segment with the provided data
+                segment = (
+                    Trace.query()
+                    .filter_by(id=segment_data["id"], parcours_id=parcours_version_id)
+                    .first()
+                )
+                if segment is None:
+                    errors.append(
+                        f"segment with id {segment_data['id']} do not exist, it will be created"
+                    )
+                    to_create = True
+                else:
+                    segment.start_id = ids.get(
+                        segment_data["start"], segment_data["start"]
+                    )
+                    segment.end_id = ids.get(segment_data["to"], segment_data["to"])
+                    segment.index = segment_data["index"]
+
+                    if (trace := Trace.check_path(segment_data["trace"])) is not None:
+                        segment.path = trace
+                    else:
+                        errors.append(
+                            f"the provided trace for segment with id {segment_data['id']} is not valid, it will be set to an empty trace"
+                        )
+                        segment.path = []
+                    db.session.commit()
+            if to_create:
+                # create a new segment
+                if (trace := Trace.check_path(segment_data["trace"])) is not None:
+                    path = trace
+                else:
+                    errors.append(
+                        f"the provided trace for segment with id {segment_data['id']} is not valid, it will be set to an empty trace"
+                    )
+                    path = []
+                segment = Trace(
+                    start_id=ids.get(segment_data["start"], segment_data["start"]),
+                    end_id=ids.get(segment_data["to"], segment_data["to"]),
+                    index=segment_data["index"],
+                    name="",
+                    parcours_id=parcours_version_id,
+                )
+                segment.path = path
+                db.session.add(segment)
+                db.session.commit()
+                db.session.refresh(segment)
+                ids[segment_data["id"]] = segment.id
+
+    return jsonify({"success": True, "ids": ids, "errors": errors})
+
+
+@api.route("/update_parcours/<int:event_id>/<int:parcours_version_id>", method="PATCH")
+def update_parcours(event_id: int, parcours_version_id: int):
+    parcours: ParcoursVersion = (
+        ParcoursVersion.query()
+        .filter(
+            ParcoursVersion.parcours.has(Parcours.event_id == event_id),
+            ParcoursVersion.id == parcours_version_id,
+        )
+        .first_or_404()
+    )
+    data: Any = request.get_json()  # pyright: ignore[reportAny]
+
+    if not isinstance(data, list):
+        return err("data not valid not a list")
+    ic(data)  # pyright: ignore[reportUnknownArgumentType]
+    for op in cast(list[dict[str, Any]], data):
+        match op.get("op"):
+            case "stand:modif":
+                # Validation de l'ID et récupération de l'objet
+                stand_id = get(op, "id", int)
+                if stand_id is None:
+                    return err("id field was not provided")
+
+                stand = (
+                    Stand.query()
+                    .filter_by(id=stand_id, parcours_id=parcours.id)
+                    .first()
+                )
+                if stand is None:
+                    return err(f"stand with id {stand_id} do not exist")
+
+                ## actual modifications
+                if (lat := get(op, "lat", float)) is not None:
+                    stand.lat = lat
+                if (lng := get(op, "lng", float)) is not None:
+                    stand.lng = lng
+                if (name := get(op, "name", str)) is not None:
+                    stand.name = name
+                if (color := get(op, "color", str)) is not None:
+                    try:
+                        stand.color = Color(color)
+                    except ValueError:
+                        return err(
+                            f"{color}) is not a valid color. see https://pypi.org/project/colour/"
+                        )
+                if (chrono := get(op, "chrono", bool)) is not None:
+                    stand.chrono = chrono
+            case "segment:modif":
+                id = get(op, "id", int)
+                if id is None:
+                    return err("id field was not provided or not valid")
+                segment = (
+                    Trace.query()
+                    .filter_by(id=id, parcours_id=parcours_version_id)
+                    .first()
+                )
+                if segment is None:
+                    return err(f"no segment with an id {id} found")
+
+                if (trace := Trace.check_path(get(op, "trace", list))) is not None:
+                    segment.path = trace
+                else:
+                    return err("the provided trace is not valid")
+            case "parcours:modif":
+                if (name := get(op, "name", str)) is not None:
+                    parcours.parcours.name = name
+                if (vesionDescription := get(op, "vesionDescription", str)) is not None:
+                    parcours.description = vesionDescription
+                if (description := get(op, "description", str)) is not None:
+                    parcours.parcours.description = description
+            case _ as o:
+                return jsonify(
+                    {"success": False, "error": f"op {o} is not a recognise operation"}
+                )
+        db.session.commit()
+
+    return jsonify({"success": True})
+
+
+@api.route("/get_parcours/<int:event_id>/<int:parcours_version_id>")
+def get_parcours(event_id: int, parcours_version_id: int):
+    parcours = (
+        ParcoursVersion.query()
+        .filter(
+            ParcoursVersion.parcours.has(Parcours.event_id == event_id),
+            ParcoursVersion.id == parcours_version_id,
+        )
+        .first_or_404()
+    )
+    data: ParcoursData = {
+        "id": parcours.id,
+        "event_id": parcours.event_id,
+        "name": parcours.name,
+        "description": parcours.description,
+        "creation_date": parcours.creation_date,
+        "stands": [],
+        "segments": [],
+        "modif": True,  # todo : check from the date
+        "modif_allowed": True,
+    }
+
+    segment_index = 0
+    stands_ids = set[int]()
+    for etape in parcours:
+        if isinstance(etape, Stand):
+            if etape.id in stands_ids:
+                continue
+            stands_ids.add(etape.id)
+            data["stands"].append(
+                {
+                    "id": etape.id,
+                    "name": etape.name,
+                    "lat": etape.lat,
+                    "lng": etape.lng,
+                    "ele": etape.elevation,
+                    "color": etape.color.get_hex_l(),
+                    "chrono": etape.chrono,
+                }
+            )
         else:
-            modif_form.name.errors = list(name_form.name.errors)+['vous utiliser deja ce nom.']
+            data["segments"].append(
+                {
+                    "id": etape.id,
+                    "start": etape.start.id,
+                    "to": etape.end.id,
+                    "trace": [
+                        (lat, lng, alt)
+                        for lat, lng, alt in literal_eval(etape.trace)  # pyright: ignore[reportAny]
+                    ],
+                    "index": segment_index,
+                }
+            )
+            segment_index += 1
 
-    return render_modify_parcours(event, parcours, 'trace', modif_form, trace=trace)
+    if len(data["stands"]) == 1 and data["stands"][0]["lat"] == 1000:
+        data["stands"] = []
 
-@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/new/<int:last_marker>', methods=['POST', 'GET'])
+    return jsonify(data)
+
+
+# endregion api
+
+
+@set_route(parcours_bp, "/event/<event_name>/parcours/<parcours_name>")
 @login_required
 @admin_required
-def new_stand(event_name, parcours_name, last_marker):
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
+def modify_parcours(event_name: str, parcours_name: str) -> str | Response:
+    event = Event.query().filter_by(name=event_name).first_or_404()
+    parcours = assert404(
+        event.parcours.filter_by(name=parcours_name).first()
+    ).last_version
+    return render_template(
+        "modify_parcours.html",
+        user_data=current_user,
+        event_data=event,
+        parcours_data=parcours,
+        event_modif=True,
+    )
 
-    # trouve le marker qui est le debut de la traces
-    turn_nb = 1
-    stand : Stand = parcours.start_stand
-    for i in range(last_marker):
-        stand:Stand = stand.start_trace.filter_by(turn_nb=turn_nb).first().end
-        if stand == parcours.start_stand:
-            turn_nb += 1
-   #ic(stand, turn_nb)
 
-    # ! creer le modif_form
-    modif_form= Stand_modif_form()
-   #ic(stand.start_trace.filter_by(turn_nb=turn_nb).count())
-    if last_marker == -1 or not stand.start_trace.filter_by(turn_nb=turn_nb).count():
-        modif_form.chrono.data=1
-        modif_form.chrono.render_kw  = {'disabled':''}
-
-    if modif_form.validate_on_submit():
-        elevation = get_points_elevation([(modif_form.lat.data, modif_form.lng.data)])
-        elevation = elevation[0]['elevation'] if elevation else None
-        new_stand = Stand(name=modif_form.name.data,
-                        lat=modif_form.lat.data,
-                        lng=modif_form.lng.data,
-                        elevation=elevation,
-                        parcours_id=parcours.id,
-                        color=modif_form.color.data,
-                        chrono=modif_form.chrono.data)
-        db.session.add(new_stand)
-        db.session.commit()
-        db.session.refresh(new_stand)
-
-        nb_name = Trace.query.filter(Trace.name.contains(f'{stand.name} - {new_stand.name}'[:36])).count()
-        old_trace = Trace.query.filter_by(start_id = stand.id, turn_nb=turn_nb).first()
-        name = f"{stand.name} - {new_stand.name}{f' ({nb_name})' if nb_name else ''}"
-        new_trace = Trace(name=name,
-                        parcours_id=parcours.id,
-                        start_id = stand.id,
-                        end_id = new_stand.id,
-                        turn_nb=turn_nb)
-        db.session.add(new_trace)
-
-       #ic(stand.start_trace.filter_by(turn_nb=turn_nb+1).all(), stand.start_trace.filter_by(turn_nb=turn_nb+1).all())
-        if stand.end_stand: # c'est le dernier
-           #ic('dernier')
-            parcours.end_stand.end_stand = None
-            new_stand.end_stand = parcours.id
-        else:
-           #ic('pas dernier')
-            old_trace.start_id = new_stand.id
-        db.session.commit()
-
-        return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-   #ic(modif_form.errors)
-    return render_modify_parcours(event, parcours, 'new', modif_form, last_marker=last_marker)
-
-@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/new/<int:last_marker>/<int:stand_id>', methods=['POST', 'GET'])
+@set_route(parcours_bp, "/event/<event_name>/parcours", methods=["POST", "GET"])
 @login_required
 @admin_required
-def new_step(event_name, parcours_name, last_marker, stand_id):
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
-    end_stand = parcours.stands.filter_by(id=stand_id).first_or_404()
-
-    
-    # trouve le marker qui est le debut de la traces
-    turn_nb = 1
-    start_stand : Stand = parcours.start_stand
-    for i in range(last_marker):
-        start_stand = start_stand.start_trace.filter_by(turn_nb=turn_nb).first().end
-        if start_stand == parcours.start_stand:
-            turn_nb += 1
-   #ic(start_stand, turn_nb)
-
-    nb_name = Trace.query.filter(Trace.name.contains(f'{start_stand.name} - {end_stand.name}'[:36])).count()
-    old_trace = Trace.query.filter_by(start_id = start_stand.id, turn_nb=turn_nb).first()
-    
-    name = f"{start_stand.name} - {end_stand.name}{f' ({nb_name})' if nb_name else ''}"
-    new_trace = Trace(name=name,
-                    parcours_id=parcours.id,
-                    start_id = start_stand.id,
-                    end_id = end_stand.id,
-                    turn_nb=turn_nb)
-
-    if end_stand == parcours.start_stand:
-        for nb in range(turn_nb+1, parcours.get_nb_turns()+1):
-            for trace in parcours.traces.filter_by(turn_nb=nb).all():
-                trace.turn_nb += 1
-    else:
-       #ic(parcours.traces.filter_by(turn_nb=turn_nb).all(), end_stand)
-        if parcours.traces.filter_by(turn_nb=turn_nb).filter(or_(Trace.start_id==end_stand.id, Trace.end_id==end_stand.id)).count()!=0:
-            flash('ce stand ne peut pas etre utilisé car il est deja utilise pour cette etape', 'warning')
-            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-
-    db.session.add(new_trace)
-    if start_stand == parcours.end_stand:
-        parcours.end_stand.end_stand = None
-        end_stand.end_stand = parcours.id
-    else:
-        old_trace.start_id = end_stand.id
-
-    db.session.commit()
-
-    return render_modify_parcours(event, parcours)
-
-@set_route(parcours_bp, '/event/<event_name>/parcours/<parcours_name>/trace/<int:trace_id>/delete')
-@login_required
-@admin_required
-def delete_trace(event_name, parcours_name, trace_id):
-    event = Event.query.filter_by(name=event_name).first_or_404()
-    parcours:Parcours= event.parcours.filter_by(name=parcours_name).first_or_404()
-    trace = parcours.traces.filter_by(id=trace_id).first()
-   #ic(trace, trace.end, parcours.start_stand, trace.end == parcours.start_stand, bool(trace))
-
-    if trace == None:
-       #ic('trace == None')
-        return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-
-    if trace.end == parcours.start_stand:
-       #ic('fin de la trace -> debut du parcours')
-        if trace.is_last_trace():
-           #ic('derniere du parcours')
-            parcours.end_stand.end_stand = None
-            trace.start.end_stand = parcours.id
-            db.session.delete(trace)
-            db.session.commit()
-        else:
-            stands_last_turn = set()
-            for loop_trace in parcours.traces.filter_by(turn_nb=trace.turn_nb).all():
-                stands_last_turn.add(loop_trace.end)
-                stands_last_turn.add(loop_trace.start)
-            stands_next_turn = set()
-            for loop_trace in parcours.traces.filter_by(turn_nb=trace.turn_nb+1).all():
-                stands_next_turn.add(loop_trace.end)
-                stands_next_turn.add(loop_trace.start)
-            if any([stand in stands_last_turn and stand != parcours.start_stand for stand in stands_next_turn]):
-                flash('cette etape n\'est pas supprimable car elle créerais une boucle hors du parcours', 'danger')
-                return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-            
-           #ic('pas la derniere du parcours')
-           #ic(trace.get_next_trace())
-            next = trace.get_next_trace()
-            next.start_id = trace.start_id
-           #ic(next, trace.start_id)
-            db.session.commit()
-            db.session.delete(trace)
-            db.session.commit()
-           #ic(trace.turn_nb+1,parcours.get_nb_turns()+1)
-            for nb in range(trace.turn_nb+1,parcours.get_nb_turns()+1):
-                for trace in parcours.traces.filter_by(turn_nb=nb).all():
-                    trace.turn_nb -= 1
-            db.session.commit()
-    elif trace.end == parcours.end_stand:
-       #ic('fin de la trace -> fin du parcours')
-        trace.end.end_stand = None
-        trace.start.end_stand = parcours.id
-        if trace.end.start_trace.filter_by(turn_nb=trace.turn_nb).count() == 0:
-            db.session.delete(trace.end)
-        db.session.delete(trace)
-        db.session.commit()
-    elif trace.get_next_trace().end == parcours.start_stand:
-       #ic('allée d\'un allée retour')
-        next_trace = trace.get_next_trace()
-       #ic(next_trace)
-        if trace.end.start_trace.filter_by(turn_nb=trace.turn_nb).count() == 1: # un seul : la trace à supprimer
-            db.session.delete(trace.end)
-       #ic(next_trace, trace)
-        db.session.delete(next_trace)
-        db.session.delete(trace)
-        for nb in range(trace.turn_nb+1,parcours.get_nb_turns()+1):
-            for trace in parcours.traces.filter_by(turn_nb=nb).all():
-                trace.turn_nb -= 1
-        
-        db.session.commit()
-    else:
-       #ic('allée normale')
-        trace.get_next_trace().start_id = trace.start_id
-
-       #ic(trace.end.start_trace.filter_by(turn_nb=trace.turn_nb+1).all(), trace.end.start_trace.filter_by(turn_nb=trace.turn_nb).all())
-        if trace.end.start_trace.filter_by(turn_nb=trace.turn_nb).count() == 0: # un seul : la trace à supprimer
-           #ic('delete the stand')
-            db.session.delete(trace.end)
-
-        db.session.delete(trace)
-        db.session.commit()
-        
-    return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-
-def render_modify_parcours(event, parcours, modif_form_type=None, modif_form=None, **kwargs):
+def parcours_page(event_name: str) -> str | Response:
+    # * page to access the differents parcours of the event
+    event = Event.query().filter_by(name=event_name).first_or_404()
     user = current_user
-    already_use = bool(parcours.editions.count())
-    if not (modif_form_type and modif_form):
-        modif_form_type = None
-        modif_form=None
 
-    #? formulaire pour le nom du parcours
-    name_form= Parcours_name_form(data={'name':parcours.name, 'description':parcours.description})
-    if modif_form:
-        name_form.name.data = parcours.name
-        name_form.description.data = parcours.description
-    if name_form.validate_on_submit() and not modif_form:
-        if name_form.name.data == parcours.name or not event.parcours.filter_by(name=name_form.name.data).first():
-            # le nom peut etre utilisé
-            parcours.name=name_form.name.data
-            parcours.description=name_form.description.data
-            db.session.commit()
-            flash('name saved', 'success')
-            return redirect(url_for('admin.parcours.modify_parcours', event_name=event.name, parcours_name=parcours.name))
-        else:
-            name_form.name.errors = list(name_form.name.errors)+['vous utiliser deja ce nom.']
+    active_parcours = event.parcours.all()
 
-    map_data = create_map_and_alt_graph(parcours, modif=not already_use, current_stand_id=kwargs.get('stand').id if 'stand' in kwargs else None, current_trace_id=kwargs.get('trace').id if 'trace' in kwargs else None)
-    element_name, last_path_name, next_path_name, markers_name, program_list, map, graph = map_data
-
-    #? render the map
-    map.get_root().width = '100%'
-    map.get_root().height = '450px'
-    map.get_root().render()
-
-    header= map.get_root().header.render()
-    body= map.get_root().html.render()
-    script= map.get_root().script.render()
-
-    folium_map={'header':header, 'body':body, 'script':script}
-    return render_template('modify_parcours.html', user_data=user, event_data=event, parcours_data=parcours, name_form=name_form, folium_map=folium_map,
-                           map_name=map.get_name(), element_name=element_name, path_names={'last':last_path_name, 'next':next_path_name} if last_path_name else markers_name,
-                           program_list=program_list, modif_form=modif_form, modif_form_type=modif_form_type, graph=graph, event_modif=True, **kwargs)
+    return render_template(
+        "parcours.html",
+        user_data=user,
+        event_data=event,
+        archived_parcours=[],
+        active_parcours=active_parcours,
+        event_modif=True,
+    )

@@ -1,0 +1,218 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"workbench.iconTheme": "vscode-icons",
+		"editor.linkedEditing": true,
+		"files.associations": {
+			"*.html": "jinja-html"
+		},
+		"emmet.includeLanguages": {
+			"jinja-html": "html"
+		},
+		"redhat.telemetry.enabled": false,
+		"yaml.schemas": {
+			"https://squidfunk.github.io/mkdocs-material/schema.json": "mkdocs.yml"
+		},
+		"yaml.customTags": [
+			"!ENV scalar",
+			"!ENV sequence",
+			"!relative scalar",
+			"tag:yaml.org,2002:python/name:material.extensions.emoji.to_svg",
+			"tag:yaml.org,2002:python/name:material.extensions.emoji.twemoji",
+			"tag:yaml.org,2002:python/name:pymdownx.superfences.fence_code_format"
+		],
+		"git.enableSmartCommit": true,
+		// psi-header
+		"psi-header.config": {
+			"forceToTop": true,
+			"blankLinesAfter": 1,
+			"author": "Romain Maurer",
+			"license": "GPL-3.0-or-later",
+			"initials": "RM",
+			"spacesBetweenYears": false,
+			"authorEmail": "chrono-des-vignes@ikmail.com",
+			"copyrightHolder": "Romain Maurer",
+		},
+		"psi-header.variables": [
+			[
+				"projectTitle",
+				"Chrono Des Vignes"
+			],
+			[
+				"projectDescription",
+				"a timing system for sports events"
+			],
+			[
+				"projectPage",
+				"https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes"
+			]
+		],
+		"psi-header.changes-tracking": {
+			"isActive": true,
+			"autoHeader": "manualSave",
+			"enforceHeader": true,
+			"updateLicenseVariables": true,
+			"includeGlob": [
+				"**/chrono_des_vignes/**/*.{py,html}"
+			],
+			"excludeGlob": [
+				"**/chrono_des_vignes/templates/doc/**/*.*",
+				"**/settings.json"
+			],
+			"exclude": [
+				"markdown",
+				"json",
+				"jsonc",
+				"shellscript"
+			],
+			"replace": [
+				"Copyright"
+			]
+		},
+		"psi-header.lang-config": [
+			{
+				"language": "html",
+				"begin": "<!--",
+				"prefix": " * ",
+				"end": "-->",
+				"lineLength": 80,
+				"ignoreLines": [
+					"<!DOCTYPE",
+					"<html"
+				]
+			},
+			{
+				"language": "jinja-html",
+				"mapTo": "html"
+			},
+			{
+				"language": "python",
+				"begin": "\"\"\"",
+				"prefix": "# ",
+				"end": "\"\"\"",
+				"ignoreLines": [
+					"from",
+					"import",
+					"def",
+					"class"
+				]
+			}
+		],
+		"psi-header.templates": [
+			{
+				"language": "*",
+				"template": [
+					"<<projectTitle>>",
+					"<<projectDescription>>",
+					"",
+					"Copyright © <<yeartoyear(2024, now)>> <<copyrightHolder>>",
+					"This file is part of <<projectTitle>>",
+					"",
+					"<<projectTitle>> is free software: you can redistribute it and/or modify it under",
+					"the terms of the GNU General Public License as published by the Free Software Foundation,",
+					"either version 3 of the License, or (at your option) any later version.",
+					"",
+					"<<projectTitle>> is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;",
+					"without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+					"See the GNU General Public License for more fcdetails.",
+					"You should have received a copy of the GNU General Public License along with Chrono des vignes.",
+					"If not, see <https://www.gnu.org/licenses/>.",
+					"",
+					"You may contact me at <<authorEmail>>",
+					"or from my github <<projectPage>>"
+				]
+			}
+		],
+		"git.confirmSync": false,
+		"[python]": {
+			"diffEditor.ignoreTrimWhitespace": false,
+			"editor.formatOnType": true,
+			"editor.defaultFormatter": "charliermarsh.ruff",
+			"editor.formatOnSave": true
+		},
+		"[typescript]": {
+			"editor.tabSize": 2,
+			"editor.formatOnSave": true
+		},
+		"python.languageServer": "None",
+		"telemetry.feedback.enabled": false,
+		"database-client.telemetry.usesOnlineServices": false,
+		"editor.multiCursorModifier": "ctrlCmd",
+		"files.exclude": {
+			"**/.git": true,
+			"**/__pycache__": true
+		},
+		"files.readonlyInclude": {
+			"**/static/js/*.*": true,
+			"**/static/doc/*.*": true,
+			"**/static/profil_pics/*.*": true,
+		},
+		"github.copilot.chat.commitMessageGeneration.instructions": [
+			{
+				"text": "Generate a commit message based on the following diff. The commit message should be concise and descriptive, summarizing the changes made in the code. Use the imperative mood and avoid using personal pronouns. If the diff includes multiple changes, provide a summary of the most significant changes.; # Start with setup\r\n\r\n\r\nexample:\r\n\r\n\t\t\t\tchore: set up user profile feature scaffolding\r\n\r\n# Backend development\r\nfeat: add user profile model schema in MongoDB\r\nfeat: create GET \/api\/users\/:id endpoint\r\nfeat: create PUT \/api\/users\/:id endpoint for updates\r\ntest: add unit tests for user profile endpoints\r\n\r\n# Frontend development\r\nfeat: create UserProfile React component\r\nfeat: add profile edit form with validation\r\nstyle: format UserProfile component with Prettier\r\n\r\n# Integration\r\nfeat: connect profile component to API endpoints\r\nfix: resolve avatar upload issue in profile form\r\n\r\n# Bug fixes found during testing\r\nfix: handle null values in profile display\r\nfix: correct validation error messages\r\n\r\n# Polish\r\nrefactor: extract profile form into reusable component\r\ndocs: add component usage documentation\r\ntest: add integration tests for profile flow\r\n\r\n# Final touches\r\nstyle: apply consistent styling to profile page\\nchore: remove console.log statements\r\n\r\nFormat: <type>: <short summary>\r\n\r\nCommon Types:\r\n\r\n    feat - New features\r\n    fix - Bug fixes\r\n    refactor - Code restructuring\r\n    style - Formatting\r\n    docs - Documentation\r\n    test - Tests\r\n    chore - Maintenance\r\n\r\nRemember: Be clear, be consistent, be helpful to your future self and your team! \uD83C\uDF89"
+			}
+		],
+		"search.exclude": {
+			"**/.venv/**": true,
+			"**/static/js/**": true
+		},
+		"todo-genie.highlight": "tag",
+	},
+	"extensions": {
+		"recommendations": [
+			"detachhead.basedpyright",
+			"ms-python.python",
+			"edwinhuish.better-comments-next",
+			"redhat.vscode-yaml",
+			"psioniq.psi-header",
+			"charliermarsh.ruff",
+			"vscode-icons-team.vscode-icons",
+			"cweijan.vscode-mysql-client2",
+			"tamasfe.even-better-toml",
+			"hongquan.dragon-jinja",
+			"jackolope.lit-analyzer-plugin",
+			"joygqz.todo-genie",
+		]
+	},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"name": "server",
+				"type": "debugpy",
+				"request": "launch",
+				"module": "flask",
+				"args": [
+					"--app",
+					"chrono_des_vignes",
+					"run",
+					"--debug"
+				],
+				"jinja": true
+			},
+			{
+				"name": "ts-watch",
+				"type": "node",
+				"request": "launch",
+				"program": "${workspaceFolder}/front-end/esbuild.config.mjs",
+				"cwd": "${workspaceFolder}/front-end",
+				"args": [
+					"--watch"
+				]
+			}
+		],
+		"compounds": [
+			{
+				"name": "front-back dev",
+				"configurations": [
+					"server",
+					"ts-watch"
+				]
+			}
+		]
+	}
+}

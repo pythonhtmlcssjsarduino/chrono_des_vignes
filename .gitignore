@@ -1,8 +1,14 @@
 # custom
-.venv_3.12
 sql-dumps
 .vscode
 release.zip
+tests/
+node_modules
+**/static/doc
+**/static/js
+.todo
+.ruff_cache
+cdv.toml
 
 
 # Byte-compiled / optimized / DLL files

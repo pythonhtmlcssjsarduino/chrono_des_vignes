@@ -1,3 +1,24 @@
+<!--
+ * Chrono Des Vignes
+ * a timing system for sports events
+ * 
+ * Copyright © 2024-2026 Romain Maurer
+ * This file is part of Chrono Des Vignes
+ * 
+ * Chrono Des Vignes is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free Software Foundation,
+ * either version 3 of the License, or (at your option) any later version.
+ * 
+ * Chrono Des Vignes is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ * You should have received a copy of the GNU General Public License along with Foobar.
+ * If not, see <https://www.gnu.org/licenses/>.
+ * 
+ * You may contact me at chrono-des-vignes@ikmail.com
+ * or from my github https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes
+-->
+
 <div class="d-flex flex-column flex-md-row">
   <nav class="navbar navbar-expand-md d-flex flex-md-column p-0 w-100">
     <button
@@ -46,20 +67,17 @@
                   href="{{ url_for('admin.editions.dossard.edition_dossards', event_name=event_data.name, edition_name=edition_data.name) }}">{{
                   _('admin.editions.gererdossard') }}</a>
               </li>
-              {% if now>edition_data.edition_date %}
               <li class="nav-item">
                 <a class="nav-link text-start"
                   href="{{ url_for('admin.editions.parcours.view', event_name=event_data.name, edition_name=edition_data.name) }}">{{
                   _('admin.editions.gererparcours') }}</a>
               </li>
-              {% endif %}
               <li class="nav-item">
                 <a class="nav-link text-start"
                   href="{{ url_for('admin.editions.result.result_page', event_name=event_data.name, edition_name=edition_data.name) }}">{{
                   _('admin.editions.result') }}</a>
               </li>
             </ul>
-          {% else %}
           {% endif %}
         </li>
         <li class="nav-item text-start" style="background-color: #d0d0d0;"> {# parcours #}

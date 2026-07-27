@@ -1,0 +1,7 @@
+[dev]
+port = 5000
+host = "localhost"
+
+[build]
+# url of the build website
+url = "https://www.chronodesvignes.ch"

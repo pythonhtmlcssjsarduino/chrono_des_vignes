@@ -2,7 +2,7 @@
  * Chrono Des Vignes
  * a timing system for sports events
  * 
- * Copyright © 2024-2025 Romain Maurer
+ * Copyright © 2024-2026 Romain Maurer
  * This file is part of Chrono Des Vignes
  * 
  * Chrono Des Vignes is free software: you can redistribute it and/or modify it under
@@ -19,93 +19,16 @@
 -->
 
 {% extends 'layout.html' %}
-{% from 'macro.html' import form_field, submit %}
 {% block import %}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
+<script type="module" src="{{ url_for('static', filename='js/Key_dashboard.js') }}"></script>
 {% endblock %}
 {% block content %}
-    <div>
-        {% if keys.0 %}
-            <ul class="list-group list-group-light">
-                {% for key in keys %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <div class="fw-bold">{{ key.name }}</div>
-                            <ul class="text-muted list-group">
-                                {% for stand in key.stands.all() %}
-                                    <li class="list-group-item">
-                                        {{ _('admin.editions.passages.parcours') }}: {{ stand.parcours.name }}, {{ _('admin.editions.passages.stand') }}: {{ stand.name }}
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <h2 class="badge rounded-pill bg-info me-4">{{ key.key }}</h2>
-                            <a href="{{ url_for('admin.editions.passages.delete_key', event_name=event_data.name, edition_name=edition_data.name, key_id=key.id) }}">
-                                <i class="fa-regular fa-circle-xmark" style="color: #ff0000;"></i>
-                            </a>
-                        </div>
-                    </li>
-                {% endfor %}
-            </ul>
-        {% endif %}
-        {% if edition_data.edition_date > now %}
-            <hr>
-            <form action="" method="post">
-                <fieldset class="form-group">
-                    {{ form.hidden_tag() }}
-                    {{ form_field(form.name) }}
-                    <br>
-                    {% for stand in form.stands.entries %}
-                        {{ form_field(stand) }}
-                    {% endfor %}
-                    <br>
-                    {{ submit(form) }}
-                </fieldset>
-            </form>
-        {% endif %}
+    <div style="display: flex;flex-direction: column;height: 100%;">
+        <h1>{{ _('admin.editions.passages.title') }}</h1>
+        <cdv-container style="flex:5;" eventId="{{ event_data.id }}" editionId="{{ edition_data.id }}"></cdv-container>
+
+        <br>
+        <hr><br>
+        <passages-table style="flex:3;overflow:auto;" eventId="{{ event_data.id }}" editionId="{{ edition_data.id }}"></passages-table>
     </div>
-
-    <br><br><hr><br>
-    <table class="table">
-        <thead>
-            <tr>
-                <th scope="col">{{ _('admin.editions.passages.time') }}</th>
-                <th scope="col">{{ _('admin.editions.passages.user') }}</th>
-                <th scope="col">{{ _('admin.editions.passages.key') }}</th>
-                <th scope="col">{{ _('admin.editions.passages.stand') }}</th>
-            </tr>
-        </thead>
-        <tbody id="passage_table" class="table-group-divider table-divider-color">
-            {% for passage in passages | sort(attribute='time_stamp', reverse=true) %}
-                <tr>
-                    <th scope="row">{{ passage.time_stamp }}</th>
-                    <td>{{ passage.inscription.inscrit.username }} {% if passage.inscription.dossard %}- {{ passage.inscription.dossard }}{% endif %}</td>
-                    <td>{{ passage.key.name }}</td>
-                    <td>{{ passage.key.stands.filter_by(parcours=passage.inscription.parcours).first().name }}</td>
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    <script>
-        var socket = io('/dashboard', {auth: {'event_id': {{ event_data.id }}, 'edition_id': {{ edition_data.id }}} });
-        var passage_table = document.getElementById('passage_table')
-
-        socket.on('new_passage', function(data){
-            let html = `<tr>
-                <th scope="row">${data.time}</th>
-                <td>${data.user} ${data.dossard?'- '+data.dossard:''}</td>
-                <td>${data.key}</td>
-                <td>${data.stand}</td>
-            </tr>`
-            let node = document.createElement('tr')
-            node.innerHTML = html
-
-            if (passage_table.children.length == 0) {
-                passage_table.appendChild(node)
-            } else {
-                passage_table.insertBefore(node, passage_table.children[0])
-            }
-        })
-    </script>
-{% endblock content %}
+{% endblock %}
