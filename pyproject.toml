@@ -32,7 +32,7 @@ dependencies = [
     "sentry-sdk>=2.66.1",
     "sqlalchemy==2.0.36",
     "sqlalchemy-utils>=0.41.2",
-    "werkzeug==3.0.4",
+    "werkzeug==3.1.6",
     "xlsxwriter>=3.0.3",
 ]
 
