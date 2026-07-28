@@ -112,7 +112,7 @@ pydantic-core==2.46.1
     # via pydantic
 pydantic-settings==2.14.2
     # via chrono-des-vignes
-pygments==2.19.2
+pygments==2.20.0
     # via icecream
 pymysql==1.1.1
     # via chrono-des-vignes
