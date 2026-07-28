@@ -40,7 +40,7 @@ email-validator==2.2.0
     # via chrono-des-vignes
 executing==2.2.0
     # via icecream
-flask==3.0.3
+flask==3.1.3
     # via
     #   chrono-des-vignes
     #   flask-babel
