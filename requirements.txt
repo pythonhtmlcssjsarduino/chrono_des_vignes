@@ -120,7 +120,7 @@ python-dotenv==1.2.2
     # via
     #   chrono-des-vignes
     #   pydantic-settings
-python-engineio==4.12.2
+python-engineio==4.13.2
     # via python-socketio
 python-socketio==5.16.2
     # via flask-socketio
