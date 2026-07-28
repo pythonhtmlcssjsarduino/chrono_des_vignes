@@ -130,7 +130,7 @@ redis==7.4.0
     # via flask-sse
 reportlab==4.2.5
     # via chrono-des-vignes
-requests==2.32.3
+requests==2.33.0
     # via chrono-des-vignes
 sentry-sdk==2.66.1
     # via chrono-des-vignes
