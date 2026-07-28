@@ -98,7 +98,7 @@ markupsafe==3.0.2
     #   mako
     #   werkzeug
     #   wtforms
-pillow==10.4.0
+pillow==12.3.0
     # via
     #   chrono-des-vignes
     #   reportlab
