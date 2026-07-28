@@ -116,7 +116,7 @@ pygments==2.19.2
     # via icecream
 pymysql==1.1.1
     # via chrono-des-vignes
-python-dotenv==1.0.1
+python-dotenv==1.2.2
     # via
     #   chrono-des-vignes
     #   pydantic-settings
