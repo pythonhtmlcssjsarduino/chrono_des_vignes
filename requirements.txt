@@ -32,7 +32,7 @@ colorama==0.4.6
     #   icecream
 colour==0.1.5
     # via chrono-des-vignes
-cryptography==48.0.1
+cryptography==50.0.0
     # via chrono-des-vignes
 dnspython==2.7.0
     # via email-validator
