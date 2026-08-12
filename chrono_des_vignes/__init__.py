@@ -141,7 +141,7 @@ def get_locale() -> str:
     return request.accept_languages.best_match(LANGAGES, default="en")
 
 
-babel = Babel(locale_selector=get_locale)
+babel = Babel()
 
 from chrono_des_vignes.models import User
 
@@ -168,7 +168,7 @@ def create_app(config_name: str = "dev"):
     socketio.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
-    babel.init_app(app)
+    babel.init_app(app, locale_selector=get_locale)
 
     @app.context_processor
     def jinja_context():  # pyright: ignore[reportUnusedFunction]
