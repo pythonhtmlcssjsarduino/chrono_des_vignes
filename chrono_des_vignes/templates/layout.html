@@ -72,7 +72,7 @@
     <header class="fixed-top">
       <nav class="navbar navbar-expand-lg bg-info" style="min-height: 70px; z-index: 4000;">
         <div class="container-fluid">
-          <a href="{{ url_for('home') }}" class="navbar-brand nav-link">
+          <a href="{{ url_for('main.home') }}" class="navbar-brand nav-link">
             <img src="{{ url_for('static', filename='favicon.ico') }}" alt="{{ _('app.name.short') }}" width="30" height="30" class="d-inline-block align-top m-1" />
             {{ _('app.name') }}
           </a>
@@ -84,25 +84,25 @@
           <div class="collapse navbar-collapse" id="collapsibleNavbar">
             <ul class="navbar-nav me-auto">
               <li class="nav-item">
-                <a href="{{ url_for('doc', path='about') }}" class="nav-link">{{ _('app.about') }}</a>
+                <a href="{{ url_for('main.doc', path='about') }}" class="nav-link">{{ _('app.about') }}</a>
               </li>
               <li class="nav-item">
-                <a href="{{ url_for('doc', path='contact') }}" class="nav-link">{{ _('app.contact') }}</a>
+                <a href="{{ url_for('main.doc', path='contact') }}" class="nav-link">{{ _('app.contact') }}</a>
               </li>
               <li class="nav-item">
                 <a href="{{ url_for('admin.editions.passages.chrono_home') }}" class="nav-link">{{ _('app.chrono') }}</a>
               </li>
               <li class="nav-item">
-                <a href="{{ url_for('doc') }}" class="nav-link">{{ _('app.docu') }}</a>
+                <a href="{{ url_for('main.doc') }}" class="nav-link">{{ _('app.docu') }}</a>
               </li>
               <li class="nav-item dropdown">
                 <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
                   {{ _('app.languages') }} : {{ _('app.lang') }}
                 </a>
                 <ul class="dropdown-menu">
-                  <li><a class="dropdown-item" href="{{ url_for('change_lang', lang='fr', next=request.path) }}">Francais</a></li>
-                  <li><a class="dropdown-item" href="{{ url_for('change_lang', lang='en', next=request.path) }}">English</a></li>
-                  <li><a class="dropdown-item" href="{{ url_for('change_lang', lang='de', next=request.path) }}">Deutsch</a></li>
+                  <li><a class="dropdown-item" href="{{ url_for('main.change_lang', lang='fr', next=request.path) }}">Francais</a></li>
+                  <li><a class="dropdown-item" href="{{ url_for('main.change_lang', lang='en', next=request.path) }}">English</a></li>
+                  <li><a class="dropdown-item" href="{{ url_for('main.change_lang', lang='de', next=request.path) }}">Deutsch</a></li>
                 </ul>
               </li>
             </ul>

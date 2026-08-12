@@ -50,7 +50,7 @@ def delete_event(event_name: str) -> str | Response:
         return redirect(url_for("admin.home_event", event_name=event.name))
     db.session.delete(event)  # type: ignore[no-untyped-call]
     db.session.commit()
-    return redirect(url_for("home"))
+    return redirect(url_for("main.home"))
 
 
 @admin.route("/event/new", methods=["POST"])
@@ -75,7 +75,7 @@ def new_event() -> str | Response:
         # ic(form.errors)
         for error in form.name.errors:
             flash(error, "danger")
-        return redirect(url_for("home"))
+        return redirect(url_for("main.home"))
 
 
 @set_route(admin, "/event/<event_name>", methods=["POST", "GET"])

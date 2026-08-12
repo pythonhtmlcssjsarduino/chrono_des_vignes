@@ -53,7 +53,7 @@ def delete_inscription(inscription_id: str) -> str | Response:
     db.session.delete(inscription)
     db.session.commit()
 
-    return redirect(url_for("home"))
+    return redirect(url_for("main.home"))
 
 
 @set_route(view, "/view/inscription/<inscription_id>")
@@ -64,7 +64,7 @@ def view_inscription_page(inscription_id: str) -> str | Response:
     edition = inscription.edition
     if inscription.inscrit.id != user.id and inscription.event.createur.id != user.id:
         flash(_("view.error.notyourinscription"), "warning")
-        return redirect(url_for("home"))
+        return redirect(url_for("main.home"))
 
     rdv_url = (
         "https://www.google.com/maps/place/{0}%C2%B0{1}'{2}".format(
@@ -128,6 +128,7 @@ def view_edition_page(event_name: str, edition_name: str) -> str | Response:
         gcalendar_url=gcalendar_url,
         time=datetime.now(),
     )
+
 
 @set_route(view, "/view/<event_name>/parcours/<parcours_name>")
 def view_parcours_page(event_name: str, parcours_name: str) -> str | Response:

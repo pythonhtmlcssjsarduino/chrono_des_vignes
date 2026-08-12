@@ -1,1 +1,1 @@
-pour me contacter écriver moi un email à l'adresse [chrono-des-vignes@ikmail.com](mailto:chrono-des-vignes@ikmail.com)
+Pour me contacter, envoyez-moi un e-mail à l’adresse [chrono-des-vignes@ikmail.com](mailto:chrono-des-vignes@ikmail.com)

@@ -36,7 +36,6 @@ from werkzeug.wrappers import Response
 from chrono_des_vignes import (
     DEFAULT_PROFIL_PIC,
     PICTURE_SIZE,
-    app,
     bcrypt,
     db,
     set_route,
@@ -69,7 +68,7 @@ users = Blueprint("users", __name__, template_folder="templates")
 @set_route(users, "/login", methods=["POST", "GET"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("home"))
+        return redirect(url_for("main.home"))
     form = Login_form()
     if form.validate_on_submit():
         user: User | None = (
@@ -86,7 +85,7 @@ def login():
             if request.args.get("next"):
                 return redirect(request.args["next"])
             else:
-                return redirect(url_for("home"))
+                return redirect(url_for("main.home"))
         else:
             flash(_("flash.error.pwdnotvalid"), "warning")
     return render_template("login.html", form=form)
@@ -95,7 +94,7 @@ def login():
 @set_route(users, "/signup", methods=["POST", "GET"])
 def signup() -> str | Response:
     if current_user.is_authenticated:
-        return redirect(url_for("home"))
+        return redirect(url_for("main.home"))
     form = Signup_form()
     if form.validate_on_submit():
         hash_pwd = bcrypt.generate_password_hash(assert400(form.password.data)).decode(
@@ -114,7 +113,7 @@ def signup() -> str | Response:
         db.session.commit()
         flash(_("flash.accountcreated"), "success")
         login_user(user)
-        return redirect(url_for("home"))
+        return redirect(url_for("main.home"))
     return render_template("signup.html", form=form)
 
 
@@ -123,7 +122,7 @@ def signup() -> str | Response:
 def logout() -> str | Response:
     logout_user()
     flash(_("flash.deconected"), "success")
-    return redirect(url_for("home"))
+    return redirect(url_for("main.home"))
 
 
 @set_route(
@@ -216,7 +215,7 @@ def inscription_page(event_name: str, edition_name: str) -> str | Response:
                 db.session.add(inscription)
             db.session.commit()
 
-            return redirect(url_for("home"))
+            return redirect(url_for("main.home"))
 
     else:
         form = InscriptionForm()
@@ -282,7 +281,7 @@ def inscription_page(event_name: str, edition_name: str) -> str | Response:
                 db.session.add(inscription)
             db.session.commit()
 
-            return redirect(url_for("home"))
+            return redirect(url_for("main.home"))
     return render_template(
         "inscription.html",
         user_data=user,
@@ -303,14 +302,14 @@ def save_avatar(form_picture: FileStorage, old_picture_name: str | None = None) 
     random_hex = secrets.token_hex(8)
     _, f_ext = os.path.splitext(assert400(form_picture.filename))
     picture_name = f"{random_hex}{f_ext}"
-    picture_path = os.path.join(app.root_path, "static/profil_pics", picture_name)
+    picture_path = os.path.join("static/profil_pics", picture_name)
 
     i = Image.open(form_picture)  # pyright: ignore[reportArgumentType]
     i.thumbnail(PICTURE_SIZE)
     i.save(picture_path)
 
     if old_picture_name != DEFAULT_PROFIL_PIC and old_picture_name is not None:
-        os.remove(os.path.join(app.root_path, "static/profil_pics", old_picture_name))
+        os.remove(os.path.join("static/profil_pics", old_picture_name))
 
     return picture_name
 

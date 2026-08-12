@@ -18,7 +18,6 @@
 # You may contact me at chrono-des-vignes@ikmail.com
 """
 
-import sentry_sdk
 import locale
 from collections.abc import Callable
 from datetime import date, datetime
@@ -26,14 +25,15 @@ from functools import wraps
 from typing import (
     Any,
     Final,
-    Generic,
     ParamSpec,
     Self,
     TypeVar,
     cast,
     override,
 )
+from warnings import deprecated
 
+import sentry_sdk
 from flask import (
     Blueprint,
     Flask,
@@ -55,12 +55,11 @@ from flask_migrate import Migrate
 from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
 from flask_sse import sse
-from icecream import install
 from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass, Query
 from werkzeug import exceptions
 from werkzeug.wrappers.response import Response
 
-from .config import FlaskConfig, cdv_config
+from .config import cdv_config, config
 
 if cdv_config.SENTRY_ENABLED:
     sentry_sdk.init(
@@ -72,50 +71,32 @@ if cdv_config.SENTRY_ENABLED:
         environment=cdv_config.SENTRY_ENVIRONMENT,
     )
 
-
-install()
-
 # met la langue en francais pour le formatage des dates
 locale.setlocale(locale.LC_TIME, "")
-
-app = Flask(
-    __name__,
-)
-app.config.from_object(FlaskConfig)
-app.jinja_env.add_extension("jinja2.ext.loopcontrols")
-
-# sse blueprint
-app.register_blueprint(sse, url_prefix="/stream")
 
 
 DEFAULT_PROFIL_PIC: Final[str] = "icone.png"
 LANGAGES: Final[tuple[str, ...]] = ("de", "fr", "en")
-if app.debug:
-    LANGAGES += ("ids", "pseudo")  # pyright: ignore[reportConstantRedefinition, reportGeneralTypeIssues]
 PICTURE_SIZE: Final[tuple[int, int]] = (200, 200)
 
 
 class CustomJSONProvider(DefaultJSONProvider):
     @override
     def default(self, obj: Any) -> Any:  # pyright: ignore[reportAny, reportIncompatibleMethodOverride]
-        if isinstance(obj, datetime) or isinstance(obj, date):
+        if isinstance(obj, (datetime, date)):
             return obj.isoformat()
         return super().default(obj)  # pyright: ignore[reportAny]
 
 
-app.json = CustomJSONProvider(app)
-
-
-T = TypeVar("T")
-
-
-class BaseQuery(Query[T], Generic[T]):
+class BaseQuery[T](Query[T]):
+    @deprecated("")
     def first_or_404(self, description: str | None = None) -> T:
         result = self.first()
         if result is None:
             abort(404, description)
         return result
 
+    @deprecated("")
     def get_or_404(
         self, ident: Any | tuple[Any, ...], description: str | None = None
     ) -> T:
@@ -135,42 +116,24 @@ class Base(DeclarativeBase, MappedAsDataclass):  # pyright: ignore[reportUnsafeM
         return cast(BaseQuery[Self], db.session.query(cls))
 
 
-db = SQLAlchemy(app, model_class=Base, session_options={"query_cls": BaseQuery})
+db = SQLAlchemy(model_class=Base, session_options={"query_cls": BaseQuery})
 
-migrate = Migrate(app, db)
+migrate = Migrate(db=db)
 
-socketio = SocketIO(app)
+socketio = SocketIO()
 
-bcrypt = Bcrypt(app)
+bcrypt = Bcrypt()
 
 
-login_manager = LoginManager(app)
+login_manager = LoginManager()
 login_manager.login_view = "users.login"
 login_manager.login_message_category = "info"
-
-# ? instansiate flask babel
-# if app.debug:
-#     old = ".venv/Lib/site-packages/babel/locale-data/fr_CH.dat"
-#     new = (
-#         ".venv/Lib/site-packages/babel/locale-data/pseudo.dat",
-#         ".venv/Lib/site-packages/babel/locale-data/ids.dat",
-#     )
-#     for file in new:
-#         if not os.path.exists(file):
-#             with open(old, "rb") as file1:
-#                 with open(file, "+wb") as file2:
-#                     file2.write(file1.read())
-
-#     from babel.core import LOCALE_ALIASES
-
-#     LOCALE_ALIASES["pseudo"] = "pseudo"
-#     LOCALE_ALIASES["ids"] = "ids"
 
 
 def get_locale() -> str:
     # if a user is logged in, use the locale from the user settings
     # ic(session.get('lang'), request.accept_languages.best_match(LANGAGES))
-    if session.get("lang"):  # pyright: ignore[reportUnknownMemberType]
+    if session.get("lang"):
         return cast(str, session["lang"])
     # otherwise try to guess the language from the user accept
     # header the browser transmits.  We support de/fr/en in this
@@ -178,9 +141,9 @@ def get_locale() -> str:
     return request.accept_languages.best_match(LANGAGES, default="en")
 
 
-babel = Babel(app, locale_selector=get_locale)
+babel = Babel(locale_selector=get_locale)
 
-from chrono_des_vignes.models import User  # noqa: E402
+from chrono_des_vignes.models import User
 
 
 @login_manager.user_loader
@@ -188,11 +151,73 @@ def load_user(user_id: str):
     return db.session.query(User).filter_by(id=user_id).first()
 
 
+def create_app(config_name: str = "dev"):
+    app = Flask(__name__)
+
+    # configure the flask app
+    app.config.from_object(config[config_name])
+    app.jinja_env.add_extension("jinja2.ext.loopcontrols")
+    # HACK remove when all api moved to flask RESTful
+    app.json = CustomJSONProvider(app)
+
+    # sse blueprint
+    app.register_blueprint(sse, url_prefix="/stream")
+
+    db.init_app(app)
+    migrate.init_app(app)
+    socketio.init_app(app)
+    bcrypt.init_app(app)
+    login_manager.init_app(app)
+    babel.init_app(app)
+
+    @app.context_processor
+    def jinja_context():  # pyright: ignore[reportUnusedFunction]
+        return {
+            "_": gettext,
+            "url_for": lang_url_for,
+            "now": datetime.now(),
+            "date": datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
+        }
+
+    @app.errorhandler(exceptions.Forbidden)
+    @app.errorhandler(exceptions.InternalServerError)
+    @app.errorhandler(exceptions.MethodNotAllowed)
+    @app.errorhandler(exceptions.NotFound)
+    @app.errorhandler(exceptions.TooManyRequests)
+    @app.errorhandler(exceptions.BadRequest)
+    @app.errorhandler(exceptions.ImATeapot)
+    def http_error(error: exceptions.HTTPException) -> Response:  # pyright: ignore[reportUnusedFunction]
+        html = render_template("error/simple_error.html", error=error)
+        return make_response(html, error.code)
+
+    # defini les pages du site web
+    from chrono_des_vignes.routes import main
+
+    app.register_blueprint(main)
+
+    from .admin import admin
+    from .api import api_blueprint
+    from .livetrack import livetrack
+    from .users import users
+    from .view import view
+
+    app.register_blueprint(admin)
+    # TODO remove when api moved to flask restful
+    app.register_blueprint(api_blueprint)
+    app.register_blueprint(livetrack)
+    app.register_blueprint(users)
+    app.register_blueprint(view)
+
+    return app
+
+
 param = ParamSpec("param")
 ret = TypeVar("ret")
 
 
-def admin_required(func: Callable[param, ret]) -> Callable[param, ret | Response]:
+def admin_required[**param, ret](
+    func: Callable[param, ret],
+) -> Callable[param, ret | Response]:
     """
     Modified login_required decorator to restrict access to admin group.
     """
@@ -202,7 +227,7 @@ def admin_required(func: Callable[param, ret]) -> Callable[param, ret | Response
     def decorated_view(*args: param.args, **kwargs: param.kwargs) -> ret | Response:
         if not current_user.admin:
             flash(_("flash.error.mustadmin"), "danger")
-            return redirect(url_for("home"))
+            return redirect(url_for("main.home"))
         if (
             kwargs.get("event_name")
             and not current_user.creations.filter_by(
@@ -210,7 +235,7 @@ def admin_required(func: Callable[param, ret]) -> Callable[param, ret | Response
             ).first()
         ):
             flash(_("flash.error.wrongadminevent"), "danger")
-            return redirect(url_for("home"))
+            return redirect(url_for("main.home"))
         return func(*args, **kwargs)
 
     return decorated_view
@@ -270,16 +295,6 @@ def lang_url_for(
     )
 
 
-@app.context_processor
-def jinja_context():
-    return dict(
-        _=gettext,
-        url_for=lang_url_for,
-        now=datetime.now(),
-        date=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
-    )
-
-
 routeP = ParamSpec("routeP")
 routeR = TypeVar("routeR", bound=ResponseReturnValue)
 
@@ -299,56 +314,10 @@ def set_route(
             if lang is None:
                 lang = request.accept_languages.best_match(LANGAGES)
             if lang not in LANGAGES:
-                return abort(404)
+                lang = LANGAGES[0]
             session["lang"] = lang
             return func(*args, **kwargs)
 
         return wrap
 
     return decorator
-
-
-# ? error Handling
-
-
-@app.errorhandler(exceptions.Forbidden)
-@app.errorhandler(exceptions.InternalServerError)
-@app.errorhandler(exceptions.MethodNotAllowed)
-@app.errorhandler(exceptions.NotFound)
-@app.errorhandler(exceptions.TooManyRequests)
-@app.errorhandler(exceptions.BadRequest)
-@app.errorhandler(exceptions.ImATeapot)
-def http_error(error: exceptions.HTTPException) -> Response:
-    html = render_template("error/simple_error.html", error=error)
-    return make_response(html, error.code)
-
-
-# ? end error Handling
-
-# defini les pages du site web
-from chrono_des_vignes.users import users  # noqa: E402
-
-app.register_blueprint(users)
-
-from chrono_des_vignes.admin import admin  # noqa: E402
-
-app.register_blueprint(admin)
-
-from chrono_des_vignes.view import view  # noqa: E402
-
-app.register_blueprint(view)
-
-if app.debug:
-    from chrono_des_vignes.dev import dev
-
-    app.register_blueprint(dev)
-
-from chrono_des_vignes.livetrack import livetrack  # noqa: E402
-
-app.register_blueprint(livetrack)
-
-from .api import api_blueprint  # noqa: E402
-
-app.register_blueprint(api_blueprint)
-
-from chrono_des_vignes import routes as routes  # noqa: E402

@@ -144,7 +144,9 @@
 		"editor.multiCursorModifier": "ctrlCmd",
 		"files.exclude": {
 			"**/.git": true,
-			"**/__pycache__": true
+			"**/__pycache__": true,
+			".pytest_cache":true,
+			".ruff_cache":true
 		},
 		"files.readonlyInclude": {
 			"**/static/js/*.*": true,

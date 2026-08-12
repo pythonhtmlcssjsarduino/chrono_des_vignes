@@ -189,9 +189,6 @@ def update_parcours_put(body: ParcoursDataPut, event_id: int, parcours_version_i
     segments = sorted(body.segments, key=lambda s: s["index"])
     stands = body.stands
 
-    # from that type of data we want to update the parcours, the stands and the segments. we will use the id field to know if we need to create a new stand/segment or update an existing one. if the id is negative it means that we need to create a new stand/segment. if the id is positive it means that we need to update an existing stand/segment with that id
-    # we will first check that all the provided stands and segments are valid, then we will update/create them, and at the end we will check if there is any stand/segment that need to be deleted (if they are not in the provided data)
-    # can you do it for me please ?
     errors: list[str] = []
     ids: dict[int, int] = {}  # old id to new id
 
