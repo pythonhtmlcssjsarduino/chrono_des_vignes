@@ -30,6 +30,7 @@ from flask import (
     render_template,
     request,
     send_from_directory,
+    session,
 )
 from flask_login import current_user
 from sqlalchemy import and_
@@ -91,6 +92,7 @@ def change_lang(lang: str) -> Response:
     else:
         if lang != request.accept_languages.best_match(LANGAGES):
             next.insert(1, lang)
+    session["lang"] = lang
     next = "/".join(next)
     return redirect(next)
 

@@ -21,16 +21,19 @@
 from ast import literal_eval
 from datetime import datetime
 from io import BytesIO
-from typing import Any, cast
+from typing import cast
 
 from flask import Blueprint, flash, redirect, render_template, send_file, url_for
 from flask_babel import _
 from flask_login import current_user, login_required
+from flask_pydantic import validate
+from pydantic import BaseModel
 from sqlalchemy import and_, func, not_, or_
 from werkzeug.wrappers import Response
 from xlsxwriter import Workbook
 
-from chrono_des_vignes import admin_required, db, set_route, socketio
+from chrono_des_vignes import admin_required, db, set_route
+from chrono_des_vignes.api import ApiBlueprint
 from chrono_des_vignes.lib import assert404
 from chrono_des_vignes.models import (
     Edition,
@@ -191,68 +194,61 @@ def validate_new_user(event_name: str, edition_name: str) -> str | Response:
     )
 
 
-@socketio.on("connect", namespace="/dossard")
-def dossard_connect(auth: dict[str, Any]) -> bool:
-    if (
-        current_user.is_authenticated
-        and auth.get("event_id")
-        and auth.get("edition_id")
-    ):
-        event = Event.query().get(auth["event_id"])
-        if not event or event.createur != current_user:
-            return False  # connection not allowed
-        edition = event.editions.filter_by(id=auth["edition_id"]).first()
-        if not edition:
-            return False  # connection not allowed
-    else:
-        return False  # connection not allowed
-    return True
+dossard_api = ApiBlueprint("edition/dossard", ["login_required"], version="v1")
 
 
-@socketio.on("disconnect", namespace="/dossard")
-def dossard_disconnect() -> None:
-    pass
+class DossardChangeBody(BaseModel):
+    inscription_id: int
+    new_dossard: int
 
 
-@socketio.on("change_dossard", namespace="/dossard")
-def change_dossard(data: dict[str, Any]) -> Any:  # pyright: ignore[reportAny]
-    inscription = Inscription.query().get(data["inscription_id"])
-    if (
-        not inscription
-        or not isinstance(data["new_dossard"], int)
-        or not current_user.is_authenticated
-        or inscription.event.createur != current_user
-    ):
-        return False
+@dossard_api.route("change_dossard", "POST")
+@validate()
+def change_dossard(body: DossardChangeBody):
+    if not current_user.is_authenticated:
+        return {"success": False, "error": "not_authenticated"}
+    inscription = Inscription.query().get(body.inscription_id)
+    if not inscription:
+        return {"success": False, "error": "inscription_not_found"}
+    if inscription.event.createur.id != current_user.id:
+        return {"success": False, "error": "not_authorized"}
+
     if (
         Inscription.query()
         .filter(
-            Inscription.dossard == data["new_dossard"],
+            Inscription.dossard == body.new_dossard,
             Inscription.edition == inscription.edition,
             Inscription.id != inscription.id,
         )
-        .first()
+        .count()
+        != 0
     ):
-        return {"erreur": "dossard déjà utilisé"}
-    inscription.dossard = data["new_dossard"]
+        return {"success": False, "error": "bib_already_used"}
+
+    inscription.dossard = body.new_dossard
     db.session.commit()
-    return True
+    return {"success": True}
 
 
-@socketio.on("change_presence", namespace="/dossard")
-def set_presence(data: dict[str, Any]) -> bool:
-    if not data.get("presence") is not None or not data.get("inscription_id"):
-        return False
+class PresenceChangeBody(BaseModel):
+    inscription_id: int
+    presence: bool
 
-    inscription = Inscription.query().get(data["inscription_id"])
+
+@dossard_api.route("change_presence", "POST")
+@validate()
+def change_presence(body: PresenceChangeBody):
+    if not current_user.is_authenticated:
+        return {"success": False, "error": "not_authenticated"}
+    inscription = Inscription.query().get(body.inscription_id)
     if not inscription:
-        return False
-    if inscription.edition.edition_date > datetime.now():
-        return False
+        return {"success": False, "error": "inscription_not_found"}
+    if inscription.event.createur.id != current_user.id:
+        return {"success": False, "error": "not_authorized"}
 
-    inscription.present = bool(data["presence"])
+    inscription.present = body.presence
     db.session.commit()
-    return True
+    return {"success": True, "presence": body.presence}
 
 
 @set_route(

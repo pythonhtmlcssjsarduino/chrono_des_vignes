@@ -52,7 +52,6 @@ from flask_babel import Babel, _, gettext
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, current_user, login_required
 from flask_migrate import Migrate
-from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
 from flask_sse import sse
 from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass, Query
@@ -120,8 +119,6 @@ db = SQLAlchemy(model_class=Base, session_options={"query_cls": BaseQuery})
 
 migrate = Migrate(db=db)
 
-socketio = SocketIO()
-
 bcrypt = Bcrypt()
 
 
@@ -165,7 +162,6 @@ def create_app(config_name: str = "dev"):
 
     db.init_app(app)
     migrate.init_app(app)
-    socketio.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
     babel.init_app(app, locale_selector=get_locale)
