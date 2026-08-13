@@ -27,7 +27,6 @@ from flask import Blueprint, abort, jsonify, redirect, render_template, request
 from flask_login import current_user, login_required
 from flask_pydantic import validate
 from flask_sse import sse
-from icecream import ic
 from pydantic import BaseModel
 from werkzeug.wrappers.response import Response
 
@@ -103,7 +102,8 @@ def create_key(event_id: int, edition_id: int):
     )
     db.session.add(key)
     db.session.commit()
-    return jsonify({"id": key.id, "key": key.key})
+    db.session.refresh(key)
+    return jsonify({"success": True, "id": key.id, "key": key.key})
 
 
 @passages_api.route("/delete_key/<int:key_id>", method="DELETE")
@@ -251,7 +251,7 @@ def sync_action(body: TimingAction):
 @chrono_api.route("/passages", method="PUT")
 @validate()
 def record_passage(body: TimingAction):
-    ic(body)
+    # ic(body)
     action = sync_action(body)
     return jsonify({"success": True, "action": action.model_dump()})
 

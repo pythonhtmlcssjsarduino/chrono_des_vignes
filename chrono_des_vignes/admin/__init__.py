@@ -53,7 +53,7 @@ def delete_event(event_name: str) -> str | Response:
     return redirect(url_for("main.home"))
 
 
-@admin.route("/event/new", methods=["POST"])
+@set_route(admin, "/event/new", methods=["POST"])
 @login_required
 @admin_required
 def new_event() -> str | Response:
