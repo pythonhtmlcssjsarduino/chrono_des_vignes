@@ -52,7 +52,6 @@ from flask_babel import Babel, _, gettext
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, current_user, login_required
 from flask_migrate import Migrate
-from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
 from flask_sse import sse
 from icecream import install
@@ -137,9 +136,7 @@ class Base(DeclarativeBase, MappedAsDataclass):  # pyright: ignore[reportUnsafeM
 
 db = SQLAlchemy(app, model_class=Base, session_options={"query_cls": BaseQuery})
 
-migrate = Migrate(app, db)
-
-socketio = SocketIO(app)
+migrate = Migrate(db=db)
 
 bcrypt = Bcrypt(app)
 

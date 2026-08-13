@@ -18,10 +18,7 @@
  * You may contact me at chrono-des-vignes@ikmail.com
 -->
 
-{% extends 'layout.html' %} 
-{% block import %}
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
-{% endblock %}
+{% extends 'layout.html' %}
 {% block content %}
 <table class="table table-striped table-hover clickable-table">
   <thead>
@@ -67,19 +64,24 @@
 <a class="btn bg-info" onclick="modal.show()">{{ _('admin.editions.dossard.addnewcoureur') }}</a>
 
 <script>
-  var socket = io('/dossard', {auth:{'event_id': {{ event_data.id }}, 'edition_id': {{ edition_data.id }} } })
   function change_dossard(inscription_id){
-    //console.log(inscription_id)
     let new_dossard = parseInt(window.prompt('enter the new dossard number'))
     if (new_dossard){
-      socket.emit('change_dossard', {'inscription_id':inscription_id, 'new_dossard':new_dossard},
-      function(response){
-        if (response == true){
+      fetch(`/api/v1/edition/dossard/change_dossard`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({'inscription_id':inscription_id, 'new_dossard':new_dossard})
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success){
           let node = document.getElementById(`inscription_${inscription_id}`)
           let html = `<a href="javascript:change_dossard(${inscription_id})"><i class="fa-solid fa-pen-to-square"></i></a> ${new_dossard}`
           node.innerHTML = html
-        } else if (response != false) {
-          window.alert(response.erreur)
+        } else {
+          window.alert(data.error)
         }
       })
     }
@@ -93,12 +95,22 @@
       }
     }
     
-    socket.emit('change_presence', {'inscription_id':inscription_id, 'presence':checked},
-      function(response){
-        if(response){
-          button.checked = checked
-        }
-      })
+
+    fetch(`/api/v1/edition/dossard/change_presence`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({'inscription_id':inscription_id, 'presence':checked})
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success){
+        button.checked = data.presence
+      } else {
+        window.alert(data.error)
+      }
+    })
   }
 
 </script>
