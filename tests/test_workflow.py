@@ -1,10 +1,9 @@
 from datetime import datetime, timedelta
 
+import pytest
 from flask import Flask
 from flask.testing import FlaskClient
-import pytest
-
-from tests.helpers import (
+from helpers import (
     create_admin_user,
     create_edition,
     create_event,

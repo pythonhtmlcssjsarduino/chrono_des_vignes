@@ -11,7 +11,6 @@ from icecream import ic
 from invoke.context import Context
 from invoke.tasks import call, task
 
-# Le fichier doit être ouvert en mode binaire ('rb')
 with open("cdv.toml", "rb") as f:
     config = tomllib.load(f)
 
@@ -42,21 +41,6 @@ def build_ts(ctx: Context, dev: bool = False):
         return
     with ctx.cd(frontend_path):
         ctx.run("node esbuild.config.mjs")
-
-
-@task(pre=[check_node_modules, clean_js])
-def watch_ts(ctx: Context, split: bool = False):
-    ts_files = list((frontend_path / "ts").glob("*.ts"))
-    if len(ts_files) == 0:
-        ic("no ts files found")
-        return
-    with ctx.cd(frontend_path):
-        ctx.run("node esbuild.config.mjs --watch")
-
-
-@task
-def serve(ctx: Context):
-    ctx.run("flask --app chrono_des_vignes run --debug")
 
 
 @task
@@ -96,13 +80,15 @@ def build_doc(ctx: Context, dev: bool = True):
 
 @task
 def requirements(ctx: Context):
+    if not Path("build").exists():
+        os.mkdir("build")
     ctx.run(
-        "uv export --no-hashes --format requirements.txt --no-dev > requirements.txt"
+        "uv export --no-hashes --format requirements.txt --no-dev > build/requirements.txt"
     )
 
 
-@task(pre=[call(build_doc, dev=False), requirements, build_ts])
-def release(ctx: Context, output: str = "release.zip"):
+@task(pre=[call(build_doc, dev=False), requirements, build_ts])  # pyright: ignore[reportArgumentType]
+def release(ctx: Context, output: str = "build/release.zip"):
     output_file = Path(output).absolute()
     base_dir = Path.cwd() / "chrono_des_vignes"
     files_glob: list[str] = [
@@ -120,7 +106,7 @@ def release(ctx: Context, output: str = "release.zip"):
             zipf.write(path, "chrono_des_vignes" / path.relative_to(base_dir))
             print(f"✔ Inclus : {path.relative_to(base_dir)}")
         # include the requirements.txt
-        zipf.write("requirements.txt", "requirements.txt")
+        zipf.write("build/requirements.txt", "requirements.txt")
         zipf.write(".python-version", ".python-version")
 
 
@@ -132,15 +118,6 @@ def sync(ctx: Context, dev: bool = False):
 @task(pre=[sync])
 def init(ctx: Context):
     ctx.run("pybabel compile -d chrono_des_vignes/translations -f")
-
-
-@task
-def build_db(ctx: Context):
-    print("creating database")
-    from chrono_des_vignes import app, db
-
-    with app.app_context():
-        db.create_all()
 
 
 # ===========lib==================

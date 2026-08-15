@@ -1,7 +1,6 @@
 # custom
 sql-dumps
 .vscode
-release.zip
 dev/
 node_modules
 **/static/doc
