@@ -29,7 +29,7 @@ from pydantic import BaseModel
 from werkzeug.wrappers.response import Response
 
 from chrono_des_vignes import admin_required, db, set_route
-from chrono_des_vignes.api import ApiBlueprint
+from chrono_des_vignes.api_old import ApiBlueprint
 from chrono_des_vignes.lib import assert404
 from chrono_des_vignes.models import (
     STATUS_MAP,

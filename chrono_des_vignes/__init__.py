@@ -192,7 +192,7 @@ def create_app(config_name: str = "dev"):
     app.register_blueprint(main)
 
     from .admin import admin
-    from .api import api_blueprint
+    from .api_old import api_blueprint
     from .livetrack import livetrack
     from .users import users
     from .view import view

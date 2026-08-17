@@ -33,7 +33,7 @@ from werkzeug.wrappers import Response
 from xlsxwriter import Workbook
 
 from chrono_des_vignes import admin_required, db, set_route
-from chrono_des_vignes.api import ApiBlueprint
+from chrono_des_vignes.api_old import ApiBlueprint
 from chrono_des_vignes.lib import assert404
 from chrono_des_vignes.models import (
     Edition,

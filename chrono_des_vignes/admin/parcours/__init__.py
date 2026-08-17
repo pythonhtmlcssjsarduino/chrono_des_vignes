@@ -38,7 +38,7 @@ from chrono_des_vignes import (
 from chrono_des_vignes import (
     lang_url_for as url_for,
 )
-from chrono_des_vignes.api import ApiBlueprint
+from chrono_des_vignes.api_old import ApiBlueprint
 from chrono_des_vignes.lib import (
     assert400,
     assert404,

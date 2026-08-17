@@ -1,7 +1,7 @@
 from typing import Any
 from unittest.mock import Mock, patch
 
-from chrono_des_vignes.api import ApiBlueprint
+from chrono_des_vignes.api_old import ApiBlueprint
 
 
 class DummyUser:

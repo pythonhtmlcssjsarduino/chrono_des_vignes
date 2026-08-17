@@ -29,7 +29,7 @@ from werkzeug.wrappers import Response
 from chrono_des_vignes import admin_required, db, set_route
 from chrono_des_vignes import lang_url_for as url_for
 from chrono_des_vignes.admin.editions.form import Edition_form
-from chrono_des_vignes.api import ApiBlueprint
+from chrono_des_vignes.api_old import ApiBlueprint
 from chrono_des_vignes.lib import assert400, assert404
 from chrono_des_vignes.models import Edition, Event, Parcours, ParcoursVersion, Stand
 
