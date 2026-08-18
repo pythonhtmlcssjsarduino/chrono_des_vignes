@@ -21,16 +21,31 @@
 
 from __future__ import annotations
 
-import json
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypedDict, cast
 
 from annotationlib import Format, get_annotations
 from flask import Flask
+from flask import Response as FlaskResponse
 from flask.views import MethodView
+from flask_swagger_ui import (
+    get_swaggerui_blueprint,  # pyright: ignore[reportUnknownVariableType]
+)
+from openapi_pydantic import (
+    Info,
+    MediaType,
+    OpenAPI,
+    Operation,
+    Parameter,
+    PathItem,
+    Paths,
+    Response,
+    Responses,
+)
+from openapi_pydantic.util import PydanticSchema, construct_open_api_with_schema_class
 from pydantic import BaseModel
-from pydantic.json_schema import models_json_schema
 
 # Source - https://stackoverflow.com/a/76646986
 # Posted by pradyunsg
@@ -64,42 +79,68 @@ class OpenApiResourceTypings(TypedDict):
 class OpenApiBuilder:
     def __init__(self, api: Api) -> None:
         self.api: Api = api
-        self.paths: dict[
-            tuple[str, int, str],
-            OpenApiResourceTypings,
-        ] = {}
+        self.paths: Paths = {}
         self.types: dict[str, type[BaseModel]] = {}
 
     def add_resource[T: type[Resource]](
         self, cls: T, rule: str, version: int, api_prefix: str
     ) -> None:
-        self.paths[(api_prefix, version, rule)] = {"resource": cls, "methods": {}}
-        self._parse_resource_types(cls)
 
-    def _parse_resource_types(self, cls: type[Resource]) -> None:
         assert cls.methods
-        api_data = cls.__api_data__
-        assert api_data
+        operations = {
+            method.lower(): self._build_operation(
+                cast(Callable[..., Any], getattr(cls, method.lower()))
+            )
+            for method in cls.methods
+        }
 
-        methods_types = self.paths[
-            (self.api.api_prefix, api_data.api_version, api_data.api_rule)
-        ]["methods"]
-        for method in cls.methods:
-            fnc = cast(Callable[..., Any], getattr(cls, method.lower()))
-            methods_types[method.lower()] = {
-                "summary": "",
-                "description": "",
-                "parameters": [],
-                "responses": {},
-            }
-            self._parse_method_types(
-                fnc,
-                methods_types[method.lower()],
+        summary, description = self._parse_sumary_and_description(cls)
+        path_item = PathItem(summary=summary, description=description)
+
+        for method_name, operation in operations.items():
+            setattr(path_item, method_name, operation)
+
+        self.paths[generate_url(rule, version, api_prefix)] = path_item
+
+    def _build_operation(self, fnc: Callable[..., Any]) -> Operation:
+
+        summary, description = self._parse_sumary_and_description(fnc)
+        self._build_operation_responses(fnc)
+        print(self._build_operation_parameters(fnc))
+        return Operation(
+            summary=summary,
+            description=description,
+            responses=self._build_operation_responses(fnc),
+            deprecated=hasattr(fnc, "__deprecated__"),
+        )
+
+    def _build_operation_responses(self, fnc: Callable[..., Any]) -> Responses:
+        responses: Responses = {}
+
+        return_annotation: Any | None = get_annotations(
+            fnc, eval_str=True, format=Format.VALUE
+        ).get("return")
+        if return_annotation is None:
+            responses["200"] = Response(description="OK")
+        else:
+            responses["200"] = Response(
+                description="OK",
+                content={
+                    "application/json": MediaType(
+                        schema=PydanticSchema[Any](
+                            schema_class=return_annotation  # pyright: ignore[reportAny]
+                        )
+                    )
+                },
             )
 
-    def _parse_method_types(
-        self, fnc: Callable[..., Any], method_type: OpenApiMethodTypings
-    ) -> None:
+        return responses
+
+    def _build_operation_parameters(self, fnc: Callable[..., Any]) -> list[Parameter]:
+        params: list[Parameter] = []
+
+        signature = inspect.signature(fnc)
+
         print(
             fnc.__name__,
             fnc.__annotations__,
@@ -108,63 +149,38 @@ class OpenApiBuilder:
             fnc.__kwdefaults__,
             fnc.__type_params__,
         )
-        # get the return type -> 200 OK
-        return_ = get_annotations(fnc, eval_str=True, format=Format.VALUE).get("return")
-        if return_ and hasattr(return_, "model_json_schema"):
-            print(return_.model_json_schema())
+        for name, param in signature.parameters.items():
+            print(
+                f"Name: {name}, "
+                f"Default: {param.default}, "
+                + f"Annotation: {param.annotation}, "
+                + f"Kind: {param.kind.name}"
+            )
 
-    def _build_components(self) -> JSON:
-        _, schemas = models_json_schema(
-            [(model, "validation") for model in self.types.values()],
-            ref_template="#/components/schemas/{model}",
-        )
-        print(_)
-        return {
-            "schemas": schemas.get("$defs", {}),
-        }
+        return params
 
-    def _build_method_item(self, fnc: Callable[..., Any]) -> JSON:
+    def _parse_sumary_and_description(self, fnc: Callable[..., Any] | type[Resource]):
         doc = fnc.__doc__.strip() if fnc.__doc__ else ""
-        doc = doc.split("---")[0]  # Only take the part before '---' for summary
-        docs = doc.split("\n\n", 1)
+        doc = doc.split(sep="---")[0]  # Only take the part before '---' for summary
+        docs = doc.split("\n", 1)
         if len(docs) == 2:
             (summary, description) = docs
         else:
             summary = docs[0]
             description = ""
 
-        return {
-            "summary": summary,
-            "description": description,
-            "parameters": [],
-            "responses": {},
-        }
+        return summary.strip(), description.strip()
 
-    def _build_path_item(self, cls: type[Resource]):
-        assert cls.methods
+    def get_openapi_spec(self) -> str:
+        # create an OpenAPI model to validate structure
+        openapi = OpenAPI(
+            openapi="3.1.1",
+            info=Info(title="Chrono Des Vignes API", version="1.0.0"),
+            paths=self.paths,
+        )
 
-        return {
-            method.lower(): self._build_method_item(
-                cast(Callable[..., Any], getattr(cls, method.lower()))
-            )
-            for method in cls.methods
-        }
-
-    def get_openapi_spec(self) -> JSON:
-        return {
-            "openapi": "3.1.0",
-            "info": {
-                "title": "Chrono Des Vignes API",
-                "version": "1.0.0",
-            },
-            "paths": {
-                generate_url(rule, version, api_prefix): self._build_path_item(
-                    resource_type["resource"]
-                )
-                for (api_prefix, version, rule), resource_type in self.paths.items()
-            },
-            "components": self._build_components(),
-        }
+        openapi = construct_open_api_with_schema_class(openapi)
+        return openapi.model_dump_json(by_alias=True, exclude_none=True, indent=2)
 
 
 class Api:
@@ -176,6 +192,27 @@ class Api:
     def init_app(self, app: Flask, api_prefix: str = "/api") -> None:
         self.api_prefix: str = api_prefix  # pyright: ignore[reportUninitializedInstanceVariable]
         self._app: Flask = app  # pyright: ignore[reportUninitializedInstanceVariable]
+
+        @app.route(f"{api_prefix}/swagger.json")
+        def swagger():
+            return FlaskResponse(self.get_openapi_spec(), mimetype="application/json")
+
+        swaggerui_blueprint = get_swaggerui_blueprint(
+            api_prefix,  # Swagger UI static files will be mapped to '{SWAGGER_URL}/dist/'
+            f"{app.config['SERVER_NAME'] or 'http://localhost:5000'}{api_prefix}/swagger.json",
+            config={  # Swagger UI config overrides
+                "app_name": "Test application"
+            },
+            # oauth_config={  # OAuth config. See https://github.com/swagger-api/swagger-ui#oauth2-configuration .
+            #    'clientId': "your-client-id",
+            #    'clientSecret': "your-client-secret-if-required",
+            #    'realm': "your-realms",
+            #    'appName': "your-app-name",
+            #    'scopeSeparator': " ",
+            #    'additionalQueryStringParams': {'test': "hello"}
+            # }
+        )
+        app.register_blueprint(swaggerui_blueprint)
 
     def register[T: type[Resource]](self, rule: str, version: int) -> Callable[[T], T]:
         def decorator(cls: T):
@@ -227,7 +264,7 @@ if __name__ == "__main__":
     app = Flask(__name__)
     api = Api(app)
 
-    apiv1 = api.version(1)
+    v1 = api.version(1)
 
     class GetResponse(BaseModel):
         id: int
@@ -237,18 +274,21 @@ if __name__ == "__main__":
         id: int
         name: str
 
-    @apiv1.register("/test")
+    @v1.register("/test")
     class test(Resource):
         """hello world
-
         its me"""
 
-        def get(self) -> GetResponse:
-            "this is my func docstring"
+        def get(self, name="hello", id: int = 3) -> GetResponse:
+            """this is my func docstring
+
+            that is a description
+            ---
+            this will not show on the swager"""
             return GetResponse(id=2, name="bob")
 
-        def put(self):
-            return {}
+        def put(self) -> GetResponse:
+            return GetResponse(id=2, name="bob")
 
-    print(json.dumps(api.get_openapi_spec(), indent=4))
-    # app.run(debug=True)
+    print(api.get_openapi_spec())
+    app.run(debug=True)
