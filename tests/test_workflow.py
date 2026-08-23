@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import re
 
 import pytest
 from flask import Flask
@@ -70,12 +71,25 @@ def test_full_user_workflow(client: FlaskClient, app: Flask):
         password="UserPass123!",
     )
     assert registration_response.status_code == 302
+    home = client.get("/")
+    assert home.status_code == 200
+    inscription_match = re.search(r"/view/inscription/(\d+)", home.text)
+    assert inscription_match is not None
+    inscription_id = int(inscription_match.group(1))
 
     logout_response = logout_user(client)
     assert logout_response.status_code == 302
 
     login_response = login_user(client, admin_username, admin_password)
     assert login_response.status_code == 302
+
+    # add the runner present
+    pre_response = client.post(
+        "/api/v1/edition/dossard/change_presence",
+        json={"inscription_id": inscription_id, "presence": True},
+    )
+    assert pre_response.status_code == 200
+    assert pre_response.json and pre_response.json["success"] == True
 
     generate_response = generate_dossards(client, event_name, edition_name)
     assert generate_response.status_code == 302

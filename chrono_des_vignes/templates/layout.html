@@ -108,7 +108,7 @@
             </ul>
             
             <ul class="nav navbar-nav d-flex">
-              {% if user_data %}
+              {% if user_data and user_data.is_authenticated %}
               <li class="nav-item">
                 <a href="{{ url_for('users.logout') }}" class="nav-link">
                   <i class="fa-solid fa-right-from-bracket"></i> {{ _('app.logout') }}

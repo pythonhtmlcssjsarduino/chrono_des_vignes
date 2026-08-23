@@ -114,7 +114,7 @@ def api_batch_start(
     )
 
     inscriptions = (
-        edition.inscriptions.filter_by(parcours_id=parcours.id, present=False)
+        edition.inscriptions.filter_by(parcours_id=parcours.id, present=True)
         .filter(~Inscription.passages.any())
         .all()
     )
@@ -138,7 +138,7 @@ def api_batch_stop(event_id: int, edition_id: int, parcours_id: int):
     )
 
     inscriptions = edition.inscriptions.filter_by(
-        parcours_id=parcours.id, end=None, present=False
+        parcours_id=parcours.id, end=None, present=True
     ).all()
     for inscription in inscriptions:
         if inscription.has_started():
