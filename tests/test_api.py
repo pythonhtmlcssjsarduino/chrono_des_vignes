@@ -1,6 +1,9 @@
 from typing import Any
 from unittest.mock import Mock, patch
 
+from openapi_pydantic import DataType
+
+from chrono_des_vignes.api import annotation_to_data_type
 from chrono_des_vignes.api_old import ApiBlueprint
 
 
@@ -16,6 +19,15 @@ class DummyUser:
         self.creations: Any | Mock = creations or Mock()
 
 
+def test_annotation_to_data_type_maps_common_python_types():
+    assert annotation_to_data_type(int) is DataType.INTEGER
+    assert annotation_to_data_type(str) is DataType.STRING
+    assert annotation_to_data_type(float) is DataType.NUMBER
+    assert annotation_to_data_type(bool) is DataType.BOOLEAN
+    assert annotation_to_data_type(list[int]) is DataType.ARRAY
+    assert annotation_to_data_type(int | None) is DataType.INTEGER
+
+
 def test_login_required_returns_login_error_for_unauthenticated_user():
     api = ApiBlueprint(
         "test", ["admin_required"], error_callback=lambda self, err: {"err": err}
@@ -26,7 +38,7 @@ def test_login_required_returns_login_error_for_unauthenticated_user():
         return {"ok": True}
 
     with patch(
-        "chrono_des_vignes.api.current_user", new=DummyUser(is_authenticated=False)
+        "chrono_des_vignes.api_old.current_user", new=DummyUser(is_authenticated=False)
     ):
         assert view_login() == {"err": "login"}
 
@@ -41,7 +53,7 @@ def test_admin_required_returns_admin_error_for_non_admin_user():
         return {"ok": True}
 
     with patch(
-        "chrono_des_vignes.api.current_user",
+        "chrono_des_vignes.api_old.current_user",
         new=DummyUser(is_authenticated=True, admin=False),
     ):
         assert view_admin() == {"err": "admin"}
@@ -59,7 +71,7 @@ def test_admin_required_returns_event_error_when_user_has_no_event():
         return {"ok": True}
 
     with patch(
-        "chrono_des_vignes.api.current_user",
+        "chrono_des_vignes.api_old.current_user",
         new=DummyUser(is_authenticated=True, admin=True, creations=creations),
     ):
         assert view_admin_event(event_id=1) == {"err": "event"}
@@ -77,7 +89,7 @@ def test_admin_required_allows_admin_with_event():
         return {"ok": True}
 
     with patch(
-        "chrono_des_vignes.api.current_user",
+        "chrono_des_vignes.api_old.current_user",
         new=DummyUser(is_authenticated=True, admin=True, creations=creations),
     ):
         assert view_admin_event_ok(event_id=1) == {"ok": True}
