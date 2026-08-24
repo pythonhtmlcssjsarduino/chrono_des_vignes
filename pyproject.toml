@@ -18,6 +18,7 @@ dependencies = [
     "flask-login==0.6.3",
     "flask-migrate>=4.1.0",
     "flask-pydantic>=0.14.0",
+    "flask-restpydanticopenapi",
     "flask-sqlalchemy>=3.1.1",
     "flask-sse>=1.0.0",
     "flask-swagger-ui>=5.32.13",
@@ -59,3 +60,11 @@ dev = [
 reportImportCycles = false
 reportUnusedCallResult = false
 reportExplicitAny = false
+
+[tool.uv.workspace]
+members = [
+    "packages/flask-RestPydanticOpenApi",
+]
+
+[tool.uv.sources]
+flask-restpydanticopenapi = { workspace = true, editable = true }
