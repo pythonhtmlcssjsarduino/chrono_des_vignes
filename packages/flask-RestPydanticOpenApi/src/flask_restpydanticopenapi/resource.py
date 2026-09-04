@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from dataclasses import dataclass
 from functools import wraps
 from typing import Any, ParamSpec, TypeVar, cast
 
@@ -8,12 +7,6 @@ from flask import Response, current_app, jsonify, make_response, request
 from flask.views import MethodView
 from pydantic import BaseModel, ValidationError
 from pydantic_core import ErrorDetails
-
-
-@dataclass
-class apiData:
-    api_version: int
-    api_rule: str
 
 
 # addapted from flask-pydantic core.py
@@ -104,7 +97,6 @@ R = TypeVar("R")
 
 class Resource(MethodView):
     init_every_request = False  # pyright: ignore[reportUnannotatedClassAttribute]
-    __api_data__: apiData | None = None
 
     response_by_alias: bool = False
     "whether Pydantic's alias is used"

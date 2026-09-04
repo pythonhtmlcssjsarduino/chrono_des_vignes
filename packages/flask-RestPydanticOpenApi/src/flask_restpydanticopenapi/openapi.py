@@ -5,6 +5,7 @@ from typing import Annotated, Any, cast, get_args, get_origin
 from warnings import warn
 
 from annotationlib import Format, get_annotations
+from flask_restpydanticopenapi.openapi_meta import get_meta_obj
 from openapi_pydantic import (
     DataType,
     Info,
@@ -213,21 +214,6 @@ class OpenApiBuilder:
         signature = inspect.signature(fnc)
         annotations = get_annotations(fnc, eval_str=True)
 
-        print(
-            fnc.__name__,
-            fnc.__annotations__,
-            fnc.__annotate__,
-            fnc.__defaults__,
-            fnc.__kwdefaults__,
-            fnc.__type_params__,
-        )
-        for name, param in signature.parameters.items():
-            print(
-                f"Name: {name}, "
-                + f"Default: {param.default}, "
-                + f"Annotation: {param.annotation}, "
-            )
-
         # path param
         # -> presents dans la rule
         sign_params = signature.parameters.copy()
@@ -316,7 +302,7 @@ class OpenApiBuilder:
         fnc: Callable[..., Any],
     ) -> RequestBody | None:
         annotations = get_annotations(fnc, eval_str=True)
-        print("oppp body ", annotations)
+
         # body param
         if (body := annotations.get("body")) is not None and issubclass(
             body, BaseModel
@@ -339,7 +325,17 @@ class OpenApiBuilder:
             summary = docs[0]
             description = ""
 
-        return summary.strip(), description.strip()
+        meta = get_meta_obj(fnc)
+        descr = "\n\n---\n\n".join(
+            [
+                "\n--\n".join([d.strip() for d in v[1]])
+                for v in sorted(meta.docs.items(), key=lambda x: x[0])
+            ]
+        )
+        if len(description.strip()) > 0:
+            descr = f"{description.strip()}\n\n----\n\n{descr}"
+
+        return summary.strip(), descr
 
     def get_openapi_spec(self) -> str:
         if self._schema is not None:

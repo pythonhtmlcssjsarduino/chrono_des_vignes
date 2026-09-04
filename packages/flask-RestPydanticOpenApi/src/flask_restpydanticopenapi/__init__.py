@@ -19,10 +19,24 @@
 # or from my github https://github.com/pythonhtmlcssjsarduino/chrono_des_vignes
 """
 
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Annotated, Any, override
+
+from flask import abort, g
+from pydantic import Field
+from pydantic.json_schema import SkipJsonSchema
+
 from flask_restpydanticopenapi.api import Api, ApiVersion
+from flask_restpydanticopenapi.authorize import OK, BaseScope, ScopeResponse
+from flask_restpydanticopenapi.openapi_meta import add_doc_to_meta, get_meta_obj
 from flask_restpydanticopenapi.resource import Resource
+from flask_restpydanticopenapi.utils import Backend
 
 __all__ = ["Api", "ApiVersion", "Resource"]
+
+
+type Internal[T: Any, M: BaseScope] = SkipJsonSchema[Annotated[T, M]]
 
 
 def main():
@@ -52,6 +66,20 @@ def main():
 
     v1 = api.version(1)
 
+    def testDb(id_field: str) -> SkipJsonSchema[str]:
+        def factory(data: dict[str, Any]) -> Any:
+            if data.get(id_field) == 0:
+                abort(404, "not found")
+
+            return g.get("hello") or data.get(id_field, -1)
+
+        return Field(default_factory=factory)
+
+    @dataclass()
+    class User:
+        id: int
+        name: str
+
     class GetResponse(BaseModel):
         id: int
         name: int
@@ -60,9 +88,40 @@ def main():
         id: int
         name: str
 
+    def factory() -> User:
+        return User(id=1, name="bob")
+
+    class login(BaseScope):
+        @override
+        def authorize(
+            self, args: tuple[Any, ...], kwargs: dict[str, Any]
+        ) -> ScopeResponse:
+            return OK
+
+    class admin(BaseScope):
+        def __init__(self, id_field: str):
+            super().__init__("admin")
+            self.id_field: str = id_field
+
+        @override
+        def authorize(
+            self, args: tuple[Any, ...], kwargs: dict[str, Any]
+        ) -> ScopeResponse:
+
+            if kwargs.get(self.id_field) != 3:
+                return ScopeResponse(
+                    authorized=False, message="You are not authorized as admin"
+                )
+
+            return OK
+
     class PutBody(BaseModel):
         what: str
-        how_many: int
+        id: int
+        what_object: SkipJsonSchema[str] = testDb(id_field="id")
+        user: Internal[User, admin]
+
+    print(PutBody.model_fields["user"].annotation)
 
     @v1.register("/test/<int:name>")
     class test(Resource):
@@ -78,6 +137,9 @@ def main():
             return GetResponse(id=2, name=name)
 
         def put(self, name: int, body: PutBody) -> PutJson:
+            """hello world
+            this put route allow you to send the data as one block"""
+            print(body)
             return PutJson(id=2, name="bob")
 
     @v1.register("/hello")
@@ -87,9 +149,9 @@ def main():
         def delete(self) -> PutJson:
             return PutJson(id=2, name="bob")
 
-    print(api.get_openapi_spec())
+    (api.get_openapi_spec())
     print(app.test_client().get("/api/v1/test/76").text)
-    # app.run(debug=True)
+    app.run(debug=True)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from flask import Flask, Response
 
 from flask_restpydanticopenapi.openapi import OpenApiBuilder
-from flask_restpydanticopenapi.resource import Resource, apiData
+from flask_restpydanticopenapi.resource import Resource
 from flask_restpydanticopenapi.utils import generate_url
 
 
@@ -36,7 +36,6 @@ class Api:
             generate_url(rule, version, self.api_prefix),
             view_func=cls.as_view(f"v{version}_{cls.__name__.lower()}"),
         )
-        cls.__api_data__ = apiData(version, rule)
         self._builder.add_resource(cls, rule, version, self.api_prefix)
 
     def version(self, version: int) -> ApiVersion:
