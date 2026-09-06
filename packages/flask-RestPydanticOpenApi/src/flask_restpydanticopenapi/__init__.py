@@ -21,7 +21,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Annotated, Any, override
+from typing import Annotated, Any, Literal, override
 
 from flask import abort, g
 from pydantic import Field
@@ -34,9 +34,6 @@ from flask_restpydanticopenapi.resource import Resource
 from flask_restpydanticopenapi.utils import Backend
 
 __all__ = ["Api", "ApiVersion", "Resource"]
-
-
-type Internal[T: Any, M: BaseScope] = SkipJsonSchema[Annotated[T, M]]
 
 
 def main():
@@ -88,38 +85,10 @@ def main():
         id: int
         name: str
 
-    def factory() -> User:
-        return User(id=1, name="bob")
-
-    class login(BaseScope):
-        @override
-        def authorize(
-            self, args: tuple[Any, ...], kwargs: dict[str, Any]
-        ) -> ScopeResponse:
-            return OK
-
-    class admin(BaseScope):
-        def __init__(self, id_field: str):
-            super().__init__("admin")
-            self.id_field: str = id_field
-
-        @override
-        def authorize(
-            self, args: tuple[Any, ...], kwargs: dict[str, Any]
-        ) -> ScopeResponse:
-
-            if kwargs.get(self.id_field) != 3:
-                return ScopeResponse(
-                    authorized=False, message="You are not authorized as admin"
-                )
-
-            return OK
-
     class PutBody(BaseModel):
         what: str
         id: int
         what_object: SkipJsonSchema[str] = testDb(id_field="id")
-        user: Internal[User, admin]
 
     print(PutBody.model_fields["user"].annotation)
 
