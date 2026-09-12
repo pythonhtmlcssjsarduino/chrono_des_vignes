@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -22,21 +23,17 @@ from pydantic_core import CoreSchema, PydanticOmit
 from flask_restpydanticopenapi.api import Api
 from flask_restpydanticopenapi.authorize import OK, BaseScope, ScopeResponse
 from flask_restpydanticopenapi.resource import Resource
+from typing_extensions import Union
 
 """extracted from pydantic.json_schema.SkipJsonSchema"""
-
-type _Internal[T: Any, M: InternalBase[Any, Any], S: str] = SkipJsonSchema[
-    Annotated[T, M, S, Field(default_factory=lambda: None)]
-]
-
 if TYPE_CHECKING:
-    type Internal[T: Any, M: InternalBase[Any, Any], S: str] = _Internal[T, M, S]
+    type Internal[T: Any] = SkipJsonSchema[Annotated[T, ...]]
 else:
 
     @dataclass(slots=True)
-    class Internal[T: Any, M: InternalBase, S: str]:
-        def __class_getitem__(cls, item: tuple[T, M, S]) -> T:
-            return _Internal[*item]  # type: ignore
+    class Internal[T: any]:
+        def __class_getitem__(cls, item: T) -> T:
+            return Annotated[item, ...]
 
         def __get_pydantic_json_schema__(
             self, core_schema: CoreSchema, handler: GetJsonSchemaHandler
@@ -81,40 +78,50 @@ class User:
 
 
 class InternalBase[P, R](ABC):
-    __instance__: ClassVar[Self | None] = None
-
     @abstractmethod
     def compute(cls, field: P, field_name: str) -> R:
         pass
 
     @classmethod
-    def _get_instance(cls) -> Self:
-        if not cls.__instance__:
-            cls.__instance__ = cls()
-        return cls.__instance__
+    def get(cls, model: dict[str, Any], field_name: str) -> R:
+        instance = cls(field_name)
 
-    @classmethod
-    def get(cls, model: BaseModel, caller_field_name: str) -> R:
-        model_cls = type(model)
-        instance = cls._get_instance()
-        caller = model_cls.model_fields.get(caller_field_name)
-        if not caller:
-            raise ValueError(f"Field {caller_field_name} not found in model")
-        assert caller.annotation
-        print(get_origin(caller.annotation), get_args(caller.annotation))
-        if not (
-            get_origin(caller.annotation) is _Internal
-            and get_args(caller.annotation)[1] is cls
-        ):
-            raise ValueError(
-                f"Field {caller_field_name} is not annotated with {cls.__name__}"
-            )
-        field_name = cast(str, get_args(caller.annotation)[2])
-
-        if field_name not in model_cls.model_fields:
+        if (field := model.get(field_name)) is None:
             raise ValueError(f"Field {field_name} not found in model")
 
-        return instance.compute(getattr(model, field_name), field_name)
+        if not isinstance(field, cls.field_type):
+            raise TypeError(
+                f"Field {field_name} is not of type {cls.field_type.__name__}"
+            )
+
+        return instance.compute(field, field_name)
+
+    def __init_subclass__(
+        cls, field_type: type[P] | UnionType | None = None, **kwargs: Any
+    ) -> None:  # pyright: ignore[reportAny]
+        super().__init_subclass__(**kwargs)
+
+        # If field_type is not provided, extract it from the type arguments
+        if field_type is None:
+            for base in cls.__orig_bases__:
+                origin = get_origin(base)
+                if origin is InternalBase or (
+                    origin
+                    and isinstance(origin, type)
+                    and issubclass(origin, InternalBase)
+                ):
+                    args = get_args(base)
+                    if args:
+                        field_type = args[0]  # First type arg is P
+                        break
+
+        if field_type is None:
+            raise ValueError(f"Could not determine field_type for {cls.__name__}")
+
+        cls.field_type = field_type  # pyright: ignore[reportUnannotatedClassAttribute]
+
+    def __new__(cls, field_name: str):
+        return Field(default_factory=lambda data: cls.get(data, field_name))
 
 
 class GetUser(InternalBase[int, User]):
@@ -139,7 +146,7 @@ class admin(BaseScope, parents=login()):
 class PutBody(BaseModel):
     what: str
     id: int
-    user: Internal[User, GetUser, Literal["id"]]
+    user: Internal[User] = GetUser("id")
 
 
 t = PutBody(what="hello", id=1)
