@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import wraps
 from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
+    Callable,
     ClassVar,
     Literal,
     Self,
@@ -17,6 +19,7 @@ from typing import (
 )
 
 from pydantic.annotated_handlers import GetJsonSchemaHandler
+from pydantic.fields import FieldInfo
 from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import CoreSchema, PydanticOmit
 
@@ -24,6 +27,8 @@ from flask_restpydanticopenapi.api import Api
 from flask_restpydanticopenapi.authorize import OK, BaseScope, ScopeResponse
 from flask_restpydanticopenapi.resource import Resource
 from typing_extensions import Union
+
+from chrono_des_vignes import Base
 
 """extracted from pydantic.json_schema.SkipJsonSchema"""
 if TYPE_CHECKING:
@@ -77,6 +82,7 @@ class User:
     name: str
 
 
+"""
 class InternalBase[P, R](ABC):
     @abstractmethod
     def compute(cls, field: P, field_name: str) -> R:
@@ -128,6 +134,57 @@ class GetUser(InternalBase[int, User]):
     @override
     def compute(cls, field: int, field_name: str) -> User:
         return User(field, field_name)
+"""
+
+"""def internal_getter[**P, R]():
+
+    def decorator(fnc: Callable[P, R]):
+        @wraps(fnc)
+        def wrapper(*args: P.args, **kwargs: P.kwargs):
+            return fnc(*args, **kwargs)
+
+        return wrapper
+
+    return decorator"""
+
+
+def internal_getter[T, R](
+    scoops: list[type[BaseScope]] | type[BaseScope] | None = None,
+):
+    """
+    Parameters
+    ----------
+    scoops : list[type[BaseScope]] | type[BaseScope] | None
+        scoops needed to acces this resource
+    """
+
+    def decorator(fnc: Callable[[T, str], R]) -> Callable[[str], Any]:
+        @wraps(fnc)
+        def wrapper(field_name: str):
+            print(field_name)
+
+            def factory(data: dict[str, Any]):
+                print(data)
+                field = data[field_name]
+                print(field, field_name)
+                res = fnc(field, field_name)
+                return res
+
+            return Field(default_factory=factory)
+
+        return wrapper
+
+    return decorator
+
+
+@internal_getter()
+def GetUser(field: int, field_name: str):
+    """
+    compute at runtime the user accessed with the id present in the field
+
+    the current user need to be an admin and have at least one event linked with the user
+    """
+    return User(field, field_name)
 
 
 class login(BaseScope):
@@ -151,8 +208,7 @@ class PutBody(BaseModel):
 
 t = PutBody(what="hello", id=1)
 for name, field in PutBody.model_fields.items():
-    if get_origin(field.annotation) is _Internal:
-        get_args(field.annotation)[1].get(PutBody, name)
+    pass
 
 
 class GetResponse(BaseModel):
@@ -183,3 +239,7 @@ class test(Resource):
         this put route allow you to send the data as one block"""
         print(body)
         return PutJson(id=2, name="bob")
+
+
+client = app.test_client()
+client.put()
