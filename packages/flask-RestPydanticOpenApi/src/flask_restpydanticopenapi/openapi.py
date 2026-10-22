@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection, Sequence
 from typing import Annotated, Any, cast, get_args, get_origin
 from warnings import warn
 
-from annotationlib import Format, get_annotations
+from annotationlib import get_annotations
 from openapi_pydantic import (
     DataType,
     Info,

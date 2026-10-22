@@ -5,7 +5,7 @@ from typing import (
     Any,
 )
 
-from flask import Flask, Response
+from flask import Flask
 from flask_swagger_ui import get_swaggerui_blueprint
 from pydantic import BaseModel
 from werkzeug.exceptions import NotFound
@@ -20,9 +20,7 @@ from flask_restpydanticopenapi.authorize import (
 from flask_restpydanticopenapi.internal_getter import Body, internal_getter, raises
 from flask_restpydanticopenapi.resource import Resource
 
-app = Flask(__name__)
-app.debug = True
-api = Api(app)
+api = Api()
 
 swaggerui_blueprint = get_swaggerui_blueprint(
     "",  # Swagger UI static files will be mapped to '{SWAGGER_URL}/dist/'
@@ -39,13 +37,6 @@ swaggerui_blueprint = get_swaggerui_blueprint(
     #    'additionalQueryStringParams': {'test': "hello"}
     # }
 )
-app.register_blueprint(swaggerui_blueprint)
-
-
-@app.route("/api/swagger.json")
-def swagger():
-    return Response(api.get_openapi_spec(), mimetype="application/json")
-
 
 v1 = api.version(1)
 
@@ -139,6 +130,13 @@ class test(Resource):
         this put route allow you to send the data as one block"""
         print(body)
         return PutJson(id=2, name=name)
+
+
+app = Flask(__name__)
+app.debug = True
+app.config["OPENAPI_MODE"] = "live"
+api.init_app(app)
+app.register_blueprint(swaggerui_blueprint)
 
 
 # client = app.test_client()
