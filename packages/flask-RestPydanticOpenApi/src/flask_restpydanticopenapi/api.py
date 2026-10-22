@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import NoReturn
 
-from flask import Flask, Response
+from flask import Flask, Response, abort
 
+from flask_restpydanticopenapi.authorize import ResultAcces, Scope
 from flask_restpydanticopenapi.openapi import OpenApiBuilder
 from flask_restpydanticopenapi.resource import Resource
 from flask_restpydanticopenapi.utils import generate_url
@@ -19,8 +21,10 @@ class Api:
         self.api_prefix: str = api_prefix  # pyright: ignore[reportUninitializedInstanceVariable]
         self._app: Flask = app  # pyright: ignore[reportUninitializedInstanceVariable]
 
+        app.extensions["flask_restpydanticopenapi"] = self
+
         @app.route(f"{api_prefix}/swagger.json")
-        def swagger():  # pyright: ignore[reportUnusedFunction]
+        def swagger():
             return Response(self.get_openapi_spec(), mimetype="application/json")
 
     def register[T: type[Resource]](self, rule: str, version: int) -> Callable[[T], T]:
@@ -43,6 +47,23 @@ class Api:
 
     def get_openapi_spec(self):
         return self._builder.get_openapi_spec()
+
+    def result_acces_denied_callback(
+        self,
+        result: object,
+        access_dict: dict[Scope, ResultAcces],
+    ) -> NoReturn:
+        """callback called when an internal_getter is use to get an object regected by scopes"""
+        abort(
+            403,
+            description=f"Access denied to the resource : {type(result).__name__}, scopes: {';'.join(f'{k.name}:{v.name}' for k, v in access_dict.items())}",
+        )
+
+    def result_as_read_only_callback[T: object](self, result: T) -> T:  # pyright: ignore[reportUnusedParameter]
+        """callback called when an internal_getter is use to get an object regected by scopes but the result is read only"""
+        raise NotImplementedError(
+            "the result_as_read_only_callback must be implemented to use the read only mode of internal_getter"
+        )
 
 
 class ApiVersion:

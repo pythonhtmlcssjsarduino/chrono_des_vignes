@@ -5,7 +5,6 @@ from typing import Annotated, Any, cast, get_args, get_origin
 from warnings import warn
 
 from annotationlib import Format, get_annotations
-from flask_restpydanticopenapi.openapi_meta import get_meta_obj
 from openapi_pydantic import (
     DataType,
     Info,
@@ -25,8 +24,14 @@ from openapi_pydantic.util import PydanticSchema, construct_open_api_with_schema
 from pydantic import BaseModel
 from werkzeug.routing import BaseConverter
 
+from flask_restpydanticopenapi.internal_getter import (
+    Internal,
+    ScopeSet,
+)
 from flask_restpydanticopenapi.resource import Resource
 from flask_restpydanticopenapi.utils import generate_url, get_path_params_from_rule
+
+__all__ = ["OpenApiBuilder"]
 
 
 class ValidationErrorDetail(BaseModel):
@@ -72,7 +77,7 @@ def annotation_to_data_type(annotation: Any) -> DataType:  # pyright: ignore[rep
     if annotation is type(None):
         return DataType.NULL
 
-    origin = get_origin(annotation)
+    origin = get_origin(annotation)  # pyright: ignore[reportAny]
     if origin is Annotated:
         args = get_args(annotation)
         if args:
@@ -84,7 +89,7 @@ def annotation_to_data_type(annotation: Any) -> DataType:  # pyright: ignore[rep
         return DataType.OBJECT
 
     if origin is not None:
-        args = [arg for arg in get_args(annotation) if arg is not type(None)]
+        args = [arg for arg in get_args(annotation) if arg is not type(None)]  # pyright: ignore[reportAny]
         if len(args) == 1:
             return annotation_to_data_type(args[0])
 
@@ -133,8 +138,8 @@ class OpenApiBuilder:
         self.paths: Paths = {}
         self.types: dict[str, type[BaseModel]] = {}
 
-    def add_resource[T: type[Resource]](
-        self, cls: T, rule: str, version: int, api_prefix: str
+    def add_resource(
+        self, cls: type[Resource], rule: str, version: int, api_prefix: str
     ) -> None:
 
         path_params = get_path_params_from_rule(rule)
@@ -163,6 +168,14 @@ class OpenApiBuilder:
     ) -> Operation:
 
         summary, description = self._parse_sumary_and_description(fnc)
+
+        # add descriptions of scopes needed to acces this resource
+        scopes = self.get_scops(fnc)
+        if len(scopes) > 0:
+            description += "\n\n---\n\n" + "\n\n".join(
+                [f"**{s.name}**\n\n{s.description}" for s in scopes]
+            )
+
         return Operation(
             summary=summary,
             description=description,
@@ -206,6 +219,32 @@ class OpenApiBuilder:
 
         return responses
 
+    def get_scops(self, fnc: Callable[..., Any]):
+        scopes = ScopeSet()
+        for name, param in get_annotations(fnc, eval_str=True).items():  # pyright: ignore[reportAny]
+            if name not in ("query", "form", "body"):
+                continue
+            if not issubclass(param, BaseModel):
+                raise TypeError(
+                    f"The type of the parameter '{name}' must be a subclass of BaseModel, got {param}"
+                )
+            for field in param.model_fields.values():
+                if any(isinstance(meta, Internal) for meta in field.metadata):  # pyright: ignore[reportArgumentType, reportAny]
+                    # builded at runtime
+
+                    # get the scopes from the metadata
+                    try:
+                        scopes_list = [
+                            meta
+                            for meta in field.metadata  # pyright: ignore[reportAny]
+                            if isinstance(meta, ScopeSet)
+                        ].pop()
+                    except IndexError:
+                        continue
+                    scopes = scopes.union(scopes_list.flattened())
+
+        return scopes
+
     def _build_operation_parameters(
         self, fnc: Callable[..., Any], path_params: dict[str, str]
     ) -> list[Parameter | Reference]:
@@ -224,16 +263,16 @@ class OpenApiBuilder:
             if param is None:
                 unfound_names.add(name)
                 continue
-            schema_type = annotation_to_data_type(param.annotation)
+            schema_type = annotation_to_data_type(param.annotation)  # pyright: ignore[reportAny]
             params.append(
                 Parameter(
                     name=name,
                     param_in="path",  # pyright: ignore[reportCallIssue]
-                    required=param.default is param.empty,
+                    required=param.default is param.empty,  # pyright: ignore[reportAny]
                     schema=Schema(
                         type=schema_type,
-                        default=param.default
-                        if param.default is not param.empty
+                        default=param.default  # pyright: ignore[reportAny]
+                        if param.default is not param.empty  # pyright: ignore[reportAny]
                         else None,
                     ),
                 )
@@ -242,7 +281,7 @@ class OpenApiBuilder:
         query_model_fields = (
             query.model_fields
             if sign_params.get("query") is not None
-            and issubclass((query := annotations["query"]), BaseModel)
+            and issubclass((query := annotations["query"]), BaseModel)  # pyright: ignore[reportAny]
             else {}
         )
         for name in unfound_names:
@@ -269,16 +308,16 @@ class OpenApiBuilder:
         for name, param in sign_params.items():
             if name in ("query", "form", "body", "return"):
                 continue
-            schema_type = annotation_to_data_type(param.annotation)
+            schema_type = annotation_to_data_type(param.annotation)  # pyright: ignore[reportAny]
             params.append(
                 Parameter(
                     name=name,
                     param_in="query",  # pyright: ignore[reportCallIssue]
-                    required=param.default is param.empty,
+                    required=param.default is param.empty,  # pyright: ignore[reportAny]
                     schema=Schema(
                         type=schema_type,
-                        default=param.default
-                        if param.default is not param.empty
+                        default=param.default  # pyright: ignore[reportAny]
+                        if param.default is not param.empty  # pyright: ignore[reportAny]
                         else None,
                     ),
                 )
@@ -325,30 +364,19 @@ class OpenApiBuilder:
             summary = docs[0]
             description = ""
 
-        meta = get_meta_obj(fnc)
-        descr = "\n\n---\n\n".join(
-            [
-                "\n--\n".join([d.strip() for d in v[1]])
-                for v in sorted(meta.docs.items(), key=lambda x: x[0])
-            ]
-        )
-        if len(description.strip()) > 0:
-            descr = f"{description.strip()}\n\n----\n\n{descr}"
-
-        return summary.strip(), descr
+        return summary.strip(), description.strip()
 
     def get_openapi_spec(self) -> str:
-        if self._schema is not None:
-            return self._schema
-        # create an OpenAPI model to validate structure
-        openapi = OpenAPI(
-            openapi="3.1.1",
-            info=Info(title="Chrono Des Vignes API", version="1.0.0"),
-            paths=self.paths,
-        )
+        if self._schema is None:
+            # create an OpenAPI model to validate structure
+            openapi = OpenAPI(
+                openapi="3.1.1",
+                info=Info(title="Chrono Des Vignes API", version="1.0.0"),
+                paths=self.paths,
+            )
 
-        openapi = construct_open_api_with_schema_class(openapi)
-        self._schema = openapi.model_dump_json(
-            by_alias=True, exclude_none=True, indent=2
-        )
+            openapi = construct_open_api_with_schema_class(openapi)
+            self._schema = openapi.model_dump_json(
+                by_alias=True, exclude_none=True, indent=2
+            )
         return self._schema

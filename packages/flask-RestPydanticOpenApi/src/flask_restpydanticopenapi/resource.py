@@ -1,12 +1,16 @@
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, ParamSpec, TypeVar, cast
+from typing import Any, cast
 
 from annotationlib import get_annotations
 from flask import Response, current_app, jsonify, make_response, request
 from flask.views import MethodView
 from pydantic import BaseModel, ValidationError
 from pydantic_core import ErrorDetails
+
+__all__ = [
+    "Resource",
+]
 
 
 # addapted from flask-pydantic core.py
@@ -39,7 +43,7 @@ def _sanitize_validation_errors(errors: list[ErrorDetails]) -> list[dict[str, An
         # Sanitize the context field if it contains exceptions
         ctx = error_dict.get("ctx")
         if isinstance(ctx, dict):
-            error_obj = ctx.get("error")
+            error_obj = ctx.get("error")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
             if isinstance(error_obj, Exception):
                 # Replace exception with JSON-serializable dict
                 ctx["error"] = {
@@ -91,10 +95,6 @@ def _parse_body(
         return None, {"body_params": _sanitize_validation_errors(ve.errors())}
 
 
-P = ParamSpec("P")
-R = TypeVar("R")
-
-
 class Resource(MethodView):
     init_every_request = False  # pyright: ignore[reportUnannotatedClassAttribute]
 
@@ -105,7 +105,7 @@ class Resource(MethodView):
     on_success_status: int = 200
 
     @classmethod
-    def _method_decorator(cls, func: Callable[P, R]):
+    def _method_decorator[**P, R](cls, func: Callable[P, R]):
 
         # Extract annotations once at decorator time
         annotations = get_annotations(func, eval_str=True)
@@ -149,21 +149,24 @@ class Resource(MethodView):
                 headers = None
                 status = cls.on_success_status
                 if isinstance(res[1], (dict, tuple, list)):
-                    headers = res[1]
-                elif len(res) == 3 and isinstance(res[2], (dict, tuple, list)):
-                    status = res[1]
-                    headers = res[2]
+                    headers = res[1]  # pyright: ignore[reportUnknownVariableType]
+                elif len(res) == 3 and isinstance(res[2], (dict, tuple, list)):  # pyright: ignore[reportUnknownArgumentType]
+                    status = res[1]  # pyright: ignore[reportUnknownVariableType]
+                    headers = res[2]  # pyright: ignore[reportUnknownVariableType]
                 else:
-                    status = res[1]
+                    status = res[1]  # pyright: ignore[reportUnknownVariableType]
 
                 ret = make_json_response(
-                    res[0], status, cls.response_by_alias, cls.exclude_none
+                    res[0],
+                    status,  # pyright: ignore[reportUnknownArgumentType]
+                    cls.response_by_alias,
+                    cls.exclude_none,
                 )
 
                 if headers:
-                    ret.headers.update(headers)
+                    ret.headers.update(headers)  # pyright: ignore[reportUnknownArgumentType]
                 return ret
-            return res
+            return res  # pyright: ignore[reportUnknownVariableType]
 
         return wrapper
 
