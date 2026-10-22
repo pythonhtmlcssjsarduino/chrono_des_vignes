@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import NoReturn
 
-from flask import Flask, Response, abort
+from flask import Flask, abort
 
 from flask_restpydanticopenapi.authorize import ResultAcces, Scope
 from flask_restpydanticopenapi.openapi import OpenApiBuilder
@@ -17,15 +17,14 @@ class Api:
             self.init_app(app, api_prefix)
 
     def init_app(self, app: Flask, api_prefix: str = "/api") -> None:
-        self._builder: OpenApiBuilder = OpenApiBuilder(app.url_map.converters)  # pyright: ignore[reportUninitializedInstanceVariable]
+        self._builder: OpenApiBuilder | None = (  # pyright: ignore[reportUninitializedInstanceVariable]
+            OpenApiBuilder(app.url_map.converters) if app.debug else None
+        )
+        print(app.debug)
         self.api_prefix: str = api_prefix  # pyright: ignore[reportUninitializedInstanceVariable]
         self._app: Flask = app  # pyright: ignore[reportUninitializedInstanceVariable]
 
         app.extensions["flask_restpydanticopenapi"] = self
-
-        @app.route(f"{api_prefix}/swagger.json")
-        def swagger():
-            return Response(self.get_openapi_spec(), mimetype="application/json")
 
     def register[T: type[Resource]](self, rule: str, version: int) -> Callable[[T], T]:
         def decorator(cls: T):
@@ -40,12 +39,17 @@ class Api:
             generate_url(rule, version, self.api_prefix),
             view_func=cls.as_view(f"v{version}_{cls.__name__.lower()}"),
         )
-        self._builder.add_resource(cls, rule, version, self.api_prefix)
+        if self._builder is not None:
+            self._builder.add_resource(cls, rule, version, self.api_prefix)
 
     def version(self, version: int) -> ApiVersion:
         return ApiVersion(version, self)
 
     def get_openapi_spec(self):
+        if self._builder is None:
+            raise RuntimeError(
+                "OpenApiBuilder is not initialized. Make sure the app is in debug mode."
+            )
         return self._builder.get_openapi_spec()
 
     def result_acces_denied_callback(

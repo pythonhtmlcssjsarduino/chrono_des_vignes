@@ -5,7 +5,7 @@ from typing import (
     Any,
 )
 
-from flask import Flask
+from flask import Flask, Response
 from flask_swagger_ui import get_swaggerui_blueprint
 from pydantic import BaseModel
 
@@ -20,6 +20,7 @@ from flask_restpydanticopenapi.internal_getter import Body, internal_getter
 from flask_restpydanticopenapi.resource import Resource
 
 app = Flask(__name__)
+app.debug = True
 api = Api(app)
 
 swaggerui_blueprint = get_swaggerui_blueprint(
@@ -38,6 +39,12 @@ swaggerui_blueprint = get_swaggerui_blueprint(
     # }
 )
 app.register_blueprint(swaggerui_blueprint)
+
+
+@app.route("/api/swagger.json")
+def swagger():
+    return Response(api.get_openapi_spec(), mimetype="application/json")
+
 
 v1 = api.version(1)
 
@@ -134,4 +141,4 @@ class test(Resource):
 
 # client = app.test_client()
 # client.put()
-app.run(debug=True, host="localhost")
+app.run(host="localhost")
