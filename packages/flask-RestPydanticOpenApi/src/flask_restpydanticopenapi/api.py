@@ -20,7 +20,6 @@ class Api:
         self._builder: OpenApiBuilder | None = (  # pyright: ignore[reportUninitializedInstanceVariable]
             OpenApiBuilder(app.url_map.converters) if app.debug else None
         )
-        print(app.debug)
         self.api_prefix: str = api_prefix  # pyright: ignore[reportUninitializedInstanceVariable]
         self._app: Flask = app  # pyright: ignore[reportUninitializedInstanceVariable]
 

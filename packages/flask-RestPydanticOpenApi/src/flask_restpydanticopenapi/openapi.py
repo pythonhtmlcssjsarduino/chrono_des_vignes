@@ -26,6 +26,7 @@ from werkzeug.routing import BaseConverter
 
 from flask_restpydanticopenapi.internal_getter import (
     Internal,
+    Raises,
     ScopeSet,
 )
 from flask_restpydanticopenapi.resource import Resource
@@ -168,18 +169,23 @@ class OpenApiBuilder:
     ) -> Operation:
 
         summary, description = self._parse_sumary_and_description(fnc)
+        responses = self._build_operation_responses(fnc)
 
         # add descriptions of scopes needed to acces this resource
         scopes = self.get_scops(fnc)
+
         if len(scopes) > 0:
             description += "\n\n---\n\n" + "\n\n".join(
                 [f"**{s.name}**\n\n{s.description}" for s in scopes]
+            )
+            responses["403"] = Response(
+                description="Forbidden: You do not have the required scopes to access this resource."
             )
 
         return Operation(
             summary=summary,
             description=description,
-            responses=self._build_operation_responses(fnc),
+            responses=responses,
             parameters=list(self._build_operation_parameters(fnc, path_params)),
             deprecated=hasattr(fnc, "__deprecated__"),
             requestBody=self._build_operation_body(fnc),
@@ -187,10 +193,9 @@ class OpenApiBuilder:
 
     def _build_operation_responses(self, fnc: Callable[..., Any]) -> Responses:
         responses: Responses = {}
+        annotations = get_annotations(fnc, eval_str=True)
 
-        return_annotation: Any | None = get_annotations(
-            fnc, eval_str=True, format=Format.VALUE
-        ).get("return")
+        return_annotation: Any | None = annotations.get("return")
         if return_annotation is None:
             responses["200"] = Response(description="OK")
         else:
@@ -205,8 +210,31 @@ class OpenApiBuilder:
                 },
             )
 
+        raises = Raises()
+        for name, param in annotations.items():  # pyright: ignore[reportAny]
+            if name not in ("query", "body"):
+                continue
+            if not issubclass(param, BaseModel):
+                raise TypeError(
+                    f"The type of the parameter '{name}' must be a subclass of BaseModel, got {param}"
+                )
+            for field in param.model_fields.values():
+                try:
+                    r = [
+                        meta
+                        for meta in field.metadata  # pyright: ignore[reportAny]
+                        if isinstance(meta, Raises)
+                    ].pop()
+                    raises.update(r)
+                except IndexError:
+                    continue
+
+        for r in raises:
+            responses[str(r.code)] = Response(
+                description=r.description or "",
+            )
+
         # Add 400 validation error response if function has query or body params
-        annotations = get_annotations(fnc, eval_str=True)
         if annotations.get("query") is not None or annotations.get("body") is not None:
             responses["400"] = Response(
                 description="Validation error",
@@ -222,7 +250,7 @@ class OpenApiBuilder:
     def get_scops(self, fnc: Callable[..., Any]):
         scopes = ScopeSet()
         for name, param in get_annotations(fnc, eval_str=True).items():  # pyright: ignore[reportAny]
-            if name not in ("query", "form", "body"):
+            if name not in ("query", "body"):
                 continue
             if not issubclass(param, BaseModel):
                 raise TypeError(

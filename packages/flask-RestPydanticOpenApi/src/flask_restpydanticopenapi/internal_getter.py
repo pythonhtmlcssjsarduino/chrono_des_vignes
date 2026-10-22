@@ -19,6 +19,7 @@ from pydantic import Field
 from pydantic.annotated_handlers import GetJsonSchemaHandler
 from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import CoreSchema, PydanticOmit
+from werkzeug.exceptions import HTTPException
 
 if TYPE_CHECKING:
     from flask_restpydanticopenapi.api import Api
@@ -82,6 +83,29 @@ def _bind[T](ref: Body[T], value: Any) -> Body[T]:  # pyright: ignore[reportAny]
     bound = Body[T](ref.name)
     bound.value = value
     return bound
+
+
+def raises[**P, R](
+    *e: type[HTTPException] | HTTPException,
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Marque les http exceptions que la fonction peut lever."""
+
+    def decorator(fnc: Callable[P, R]) -> Callable[P, R]:
+        fnc.__raises__ = Raises(e)  # pyright: ignore[reportFunctionMemberAccess]
+        return fnc
+
+    return decorator
+
+
+def get_raises(fnc: Callable[..., Any]) -> Raises:
+    if hasattr(fnc, "__raises__"):
+        return cast(Raises, fnc.__raises__)  # pyright: ignore[reportFunctionMemberAccess]
+    else:
+        return Raises()
+
+
+class Raises(set[type[HTTPException] | HTTPException]):
+    pass
 
 
 class ScopeSet(set[Scope]):
@@ -184,6 +208,7 @@ def internal_getter[**P, R](
             field = Field(default_factory=factory)
             field.metadata.append(scope_set)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
             field.metadata.append(Internal())  # pyright: ignore[reportCallIssue, reportUnknownMemberType, reportAttributeAccessIssue]
+            field.metadata.append(get_raises(fnc))  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
             return field
 
         return wrapper

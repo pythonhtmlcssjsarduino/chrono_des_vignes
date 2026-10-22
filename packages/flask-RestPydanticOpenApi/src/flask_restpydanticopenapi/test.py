@@ -8,6 +8,7 @@ from typing import (
 from flask import Flask, Response
 from flask_swagger_ui import get_swaggerui_blueprint
 from pydantic import BaseModel
+from werkzeug.exceptions import NotFound
 
 from flask_restpydanticopenapi.api import Api
 from flask_restpydanticopenapi.authorize import (
@@ -16,7 +17,7 @@ from flask_restpydanticopenapi.authorize import (
     ScopeResponse,
     scope_it,
 )
-from flask_restpydanticopenapi.internal_getter import Body, internal_getter
+from flask_restpydanticopenapi.internal_getter import Body, internal_getter, raises
 from flask_restpydanticopenapi.resource import Resource
 
 app = Flask(__name__)
@@ -88,6 +89,7 @@ class read_only:
 
 
 @internal_getter(admin)
+@raises(NotFound)
 def GetUser(id: Body[int], what: Body[str]) -> User:
     """Calcule à l'exécution l'utilisateur visé par le champ `id`.
 
