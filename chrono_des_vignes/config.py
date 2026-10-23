@@ -74,6 +74,9 @@ class FlaskConfig:
     # redis
     REDIS_URL = f"redis://{cdv_config.REDIS_HOST}:{cdv_config.REDIS_PORT}"
 
+    # openapi
+    OPENAPI_MODE = "live"
+
 
 @final
 class TestConfig:
@@ -102,6 +105,9 @@ class TestConfig:
     # testing helpers
     WTF_CSRF_ENABLED = False
     WTF_CSRF_CHECK_DEFAULT = False
+
+    # openapi
+    OPENAPI_MODE = "live"
 
 
 config = {"dev": FlaskConfig, "test": TestConfig}

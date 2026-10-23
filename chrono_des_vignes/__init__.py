@@ -52,8 +52,10 @@ from flask_babel import Babel, _, gettext
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, current_user, login_required
 from flask_migrate import Migrate
+from flask_restpydanticopenapi import Api
 from flask_sqlalchemy import SQLAlchemy
 from flask_sse import sse
+from flask_swagger_ui import get_swaggerui_blueprint
 from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass, Query
 from werkzeug import exceptions
 from werkzeug.wrappers.response import Response
@@ -81,7 +83,7 @@ PICTURE_SIZE: Final[tuple[int, int]] = (200, 200)
 
 class CustomJSONProvider(DefaultJSONProvider):
     @override
-    def default(self, obj: Any) -> Any:  # pyright: ignore[reportAny, reportIncompatibleMethodOverride]
+    def default(self, obj: Any) -> Any:  # pyright: ignore[reportAny]
         if isinstance(obj, (datetime, date)):
             return obj.isoformat()
         return super().default(obj)  # pyright: ignore[reportAny]
@@ -120,6 +122,10 @@ db = SQLAlchemy(model_class=Base, session_options={"query_cls": BaseQuery})
 migrate = Migrate(db=db)
 
 bcrypt = Bcrypt()
+
+api = Api()
+
+apiv2 = api.version(2)
 
 
 login_manager = LoginManager()
@@ -166,13 +172,16 @@ def create_app(config_name: str = "dev"):
     login_manager.init_app(app)
     babel.init_app(app, locale_selector=get_locale)
 
+    api.init_app(app, api_prefix="/api")
+    app.register_blueprint(get_swaggerui_blueprint("/openapi", app.url_for("swagger")))
+
     @app.context_processor
-    def jinja_context():  # pyright: ignore[reportUnusedFunction]
+    def jinja_context():
         return {
             "_": gettext,
             "url_for": lang_url_for,
-            "now": datetime.now(),
-            "date": datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
+            "now": datetime.now(),  # noqa: DTZ005
+            "date": datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),  # noqa: DTZ005
         }
 
     @app.errorhandler(exceptions.Forbidden)
@@ -182,7 +191,7 @@ def create_app(config_name: str = "dev"):
     @app.errorhandler(exceptions.TooManyRequests)
     @app.errorhandler(exceptions.BadRequest)
     @app.errorhandler(exceptions.ImATeapot)
-    def http_error(error: exceptions.HTTPException) -> Response:  # pyright: ignore[reportUnusedFunction]
+    def http_error(error: exceptions.HTTPException) -> Response:
         html = render_template("error/simple_error.html", error=error)
         return make_response(html, error.code)
 
