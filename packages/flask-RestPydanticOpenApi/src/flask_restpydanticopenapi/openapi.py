@@ -19,6 +19,7 @@ from openapi_pydantic import (
     Response,
     Responses,
     Schema,
+    Server,
 )
 from openapi_pydantic.util import PydanticSchema, construct_open_api_with_schema_class
 from pydantic import BaseModel
@@ -134,14 +135,15 @@ def annotation_to_data_type(annotation: Any) -> DataType:  # pyright: ignore[rep
 class OpenApiBuilder:
     _schema: str | None = None
 
-    def __init__(self, converters: dict[str, type[BaseConverter]]) -> None:
+    def __init__(
+        self, converters: dict[str, type[BaseConverter]], api_prefix: str
+    ) -> None:
         self.converters: dict[str, type[BaseConverter]] = converters
         self.paths: Paths = {}
         self.types: dict[str, type[BaseModel]] = {}
+        self.api_prefix: str = api_prefix
 
-    def add_resource(
-        self, cls: type[Resource], rule: str, version: int, api_prefix: str
-    ) -> None:
+    def add_resource(self, cls: type[Resource], rule: str, version: int) -> None:
 
         path_params = get_path_params_from_rule(rule)
 
@@ -149,7 +151,9 @@ class OpenApiBuilder:
             return
         operations = {
             method.lower(): self._build_operation(
-                cast(Callable[..., Any], getattr(cls, method.lower())), path_params
+                cast(Callable[..., Any], getattr(cls, method.lower())),
+                path_params,
+                version,
             )
             for method in cls.methods
         }
@@ -160,12 +164,12 @@ class OpenApiBuilder:
         for method_name, operation in operations.items():
             setattr(path_item, method_name, operation)
 
-        self.paths[
-            generate_url(flask_rule_to_openapi_path(rule), version, api_prefix)
-        ] = path_item
+        self.paths[generate_url(flask_rule_to_openapi_path(rule), version, "")] = (
+            path_item
+        )
 
     def _build_operation(
-        self, fnc: Callable[..., Any], path_params: dict[str, str]
+        self, fnc: Callable[..., Any], path_params: dict[str, str], version: int
     ) -> Operation:
 
         summary, description = self._parse_sumary_and_description(fnc)
@@ -189,6 +193,7 @@ class OpenApiBuilder:
             parameters=list(self._build_operation_parameters(fnc, path_params)),
             deprecated=hasattr(fnc, "__deprecated__"),
             requestBody=self._build_operation_body(fnc),
+            tags=[f"v{version}"],
         )
 
     def _build_operation_responses(self, fnc: Callable[..., Any]) -> Responses:
@@ -401,6 +406,7 @@ class OpenApiBuilder:
                 openapi="3.1.1",
                 info=Info(title="Chrono Des Vignes API", version="1.0.0"),
                 paths=self.paths,
+                servers=[Server(url=self.api_prefix)],
             )
 
             openapi = construct_open_api_with_schema_class(openapi)

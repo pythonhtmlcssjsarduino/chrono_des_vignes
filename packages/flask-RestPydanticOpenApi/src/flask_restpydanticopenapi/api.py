@@ -58,7 +58,7 @@ class Api:
         )
 
         self._builder: OpenApiBuilder | None = (  # pyright: ignore[reportUninitializedInstanceVariable]
-            OpenApiBuilder(app.url_map.converters)
+            OpenApiBuilder(app.url_map.converters, self.api_prefix)
             if self._openapi_mode == "live"
             else None
         )
@@ -110,7 +110,7 @@ class Api:
                 view_func=cls.as_view(f"v{version}_{cls.__name__.lower()}"),
             )
             if self._builder is not None:
-                self._builder.add_resource(cls, rule, version, self.api_prefix)
+                self._builder.add_resource(cls, rule, version)
 
     def version(self, version: int) -> ApiVersion:
         return ApiVersion(version, self)

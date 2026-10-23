@@ -132,6 +132,26 @@ class test(Resource):
         return PutJson(id=2, name=name)
 
 
+@api.register("/test/<int:name>", 2)
+class tttt(Resource):
+    """hello world
+    its me"""
+
+    def get(self, name: int, id: int = 3) -> GetResponse:
+        """this is my func docstring
+
+        that is a description
+        ---
+        this will not show on the swager"""
+        return GetResponse(id=id, name=name)
+
+    def put(self, name: int, body: PutBody) -> PutJson:
+        """hello world
+        this put route allow you to send the data as one block"""
+        print(body)
+        return PutJson(id=2, name=name)
+
+
 app = Flask(__name__)
 app.debug = True
 app.config["OPENAPI_MODE"] = "live"
